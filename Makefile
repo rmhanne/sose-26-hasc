@@ -1,5 +1,7 @@
 # define your compiler
 CC = g++-mp-9
+# CC = g++-8
+# CC = g++-10
 
 # compilation flags without GMP stuff
 #CCFLAGS = -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
@@ -8,6 +10,7 @@ CCFLAGS = -O3 -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 
 # linker flags without GMP stuff
 LFLAGS = -lm
+# LFLAGS = -lm -pthread # In case you need to link against pthread
 
 all: scalar_product_v1\
      scalar_product_v0\
