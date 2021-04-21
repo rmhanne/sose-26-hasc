@@ -7,8 +7,8 @@
 // is available in the directory vcl
 #include "vcl/vectorclass.h"
 
-const int M = 64;
-const int N = 64*M;
+const int M = 48;
+const int N = 128*M;
 double A[N][N] __attribute__((aligned(64)));
 double B[N][N] __attribute__((aligned(64)));
 double C[N][N] __attribute__((aligned(64)));
@@ -111,7 +111,7 @@ void matmul3 (int n, double A[N][N], double B[N][N], double C[N][N])
                 for (int p=0; p<4; ++p)
                   {
                     // load store amortized over M/8 matrix multiplications
-                    CC[p][0].load(&C[s+ii+p][t]); CC[p][1].load(&C[s+p][t+4]); 
+                    CC[p][0].load(&C[s+ii+p][t]); CC[p][1].load(&C[s+ii+p][t+4]); 
                   }
                 for (int u=k; u<k+M; u+=8)
                   for (int q=0; q<8; q+=1)
@@ -139,7 +139,59 @@ void matmul3 (int n, double A[N][N], double B[N][N], double C[N][N])
                 for (int p=0; p<4; ++p)
                   {
                     // load store amortized over M/8 matrix multiplications
-                    CC[p][0].store(&C[s+ii+p][t]); CC[p][1].store(&C[s+p][t+4]); 
+                    CC[p][0].store(&C[s+ii+p][t]); CC[p][1].store(&C[s+ii+p][t+4]); 
+                  }
+              }
+}
+
+// tiling and SIMD with vectorization of 8x8 matmul C = A*B + C
+void matmul3b (int n, double A[N][N], double B[N][N], double C[N][N])
+{
+  Vec4d CC[4][3], BB[3], AA; // fits exactly 16 registers
+  
+  for (int i=0; i<n; i+=M) // loop over tiles
+    for (int j=0; j<n; j+=M)
+      for (int k=0; k<n; k+=M)
+        for (int s=i; s<i+M; s+=12) // loop over 12x12 blocks (assume M is multiple of 12) for better cache line use
+          for (int t=j; t<j+M; t+=12)
+            for (int ii=0; ii<12; ii+=4) // do 4 rows of C at a time
+              {
+                for (int p=0; p<4; ++p)
+                  {
+                    // load store amortized over M/8 matrix multiplications
+                    CC[p][0].load(&C[s+ii+p][t]); CC[p][1].load(&C[s+ii+p][t+4]); CC[p][2].load(&C[s+ii+p][t+8]);
+                  }
+                for (int u=k; u<k+M; u+=12)
+                  for (int q=0; q<12; q+=1)
+                    {
+                       // 3 loads of B now amortized over ... 12 fmas
+                      BB[0].load(&B[u+q][t]); BB[1].load(&B[u+q][t+4]); BB[2].load(&B[u+q][t+8]);
+
+                      // now process one half column of A
+                      AA = Vec4d(A[s+ii+0][u+q]); // load-broadcast
+                      CC[0][0] = mul_add(AA,BB[0],CC[0][0]);
+                      CC[0][1] = mul_add(AA,BB[1],CC[0][1]);
+                      CC[0][2] = mul_add(AA,BB[2],CC[0][2]);
+
+                      AA = Vec4d(A[s+ii+1][u+q]); // load-broadcast
+                      CC[1][0] = mul_add(AA,BB[0],CC[1][0]);
+                      CC[1][1] = mul_add(AA,BB[1],CC[1][1]);
+                      CC[1][2] = mul_add(AA,BB[2],CC[1][2]);
+
+                      AA = Vec4d(A[s+ii+2][u+q]); // load-broadcast
+                      CC[2][0] = mul_add(AA,BB[0],CC[2][0]);
+                      CC[2][1] = mul_add(AA,BB[1],CC[2][1]);
+                      CC[2][2] = mul_add(AA,BB[2],CC[2][2]);
+
+                      AA = Vec4d(A[s+ii+3][u+q]); // load-broadcast
+                      CC[3][0] = mul_add(AA,BB[0],CC[3][0]);
+                      CC[3][1] = mul_add(AA,BB[1],CC[3][1]);
+                      CC[3][2] = mul_add(AA,BB[2],CC[3][2]);
+                    }
+                for (int p=0; p<4; ++p)
+                  {
+                    // load store amortized over M/8 matrix multiplications
+                    CC[p][0].store(&C[s+ii+p][t]); CC[p][1].store(&C[s+ii+p][t+4]); CC[p][2].store(&C[s+ii+p][t+8]);
                   }
               }
 }
@@ -177,7 +229,7 @@ public:
   // construct an experiment
   Experiment3 (int n_) : n(n_) {initialize(A,B,C);}
   // run an experiment; can be called several times
-  void run () const {matmul3(n,A,B,C);}
+  void run () const {matmul3b(n,A,B,C);}
   // report number of operations
   double operations () const
   {return 2.0*n*n*n;}
@@ -186,8 +238,8 @@ public:
 int main (int argc, char** argv)
 {
   std::vector<int> sizes;
-  for (int i=M; i<=5000; i*=2) sizes.push_back(i);
-  std::cout << "N, vanillavec, tiledvec4x4, tiledvec8x8" << std::endl;
+  for (int i=M; i<=6500; i*=2) sizes.push_back(i);
+  std::cout << "N, vanillavec, tiledvec4x4, tiledvec12x12" << std::endl;
   //std::cout << "N, vanillavec, tiledvec4x4" << std::endl;
   for (auto i : sizes)
     { 
