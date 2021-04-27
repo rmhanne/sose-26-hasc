@@ -16,7 +16,7 @@ add_compile_definitions(
 # set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-include_directories(vectorclass)
+include_directories(vcl)
 
 # =======================
 # Scalar product examples
