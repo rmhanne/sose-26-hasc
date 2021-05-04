@@ -2,6 +2,9 @@
 
 This repository collects code for the hardware aware scientific computing lecture. The code in this repository will change as the lecture proceeds so expect some changes and merge conflicts if you change anything in here.
 
+**Important:** If you clone this repository use the `--recursive` option to include submodules.
+
+
 You can either directly use the Makefile provided in this repository or use CMake for building the code.
 
 ## Makefile
