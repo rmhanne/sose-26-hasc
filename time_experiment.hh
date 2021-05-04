@@ -2,6 +2,7 @@
 #define HASC_TIME_EXPERIMENT_HH
 
 #include <chrono> 
+#include <utility> 
 
 /*! \brief time an experiment
  * This function template takes an experiment, which is a class with a method
@@ -40,6 +41,19 @@ auto time_experiment (const T& experiment, int mintime=250000)
       rep *= 2;
     }
   return rv;
+}
+
+auto get_time_stamp ()
+{
+  return std::chrono::high_resolution_clock::now();
+}
+
+template<typename T>
+double get_duration_seconds (T start, T stop)
+{
+  auto duration = stop-start;
+  auto dcast = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+  return dcast/1e6;
 }
 
 #endif
