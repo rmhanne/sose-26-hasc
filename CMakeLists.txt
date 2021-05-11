@@ -110,3 +110,23 @@ add_executable(nbody_vanilla nbody_vanilla.cc)
 # ==============
 
 add_executable(pointer_chasing pointer_chasing.cc)
+
+
+# ===========
+# C++ Threads
+# ===========
+
+add_executable(peterson peterson.cc)
+target_link_libraries(peterson Threads::Threads)
+
+add_executable(barrier barrier.cc)
+target_link_libraries(barrier Threads::Threads)
+
+add_executable(philosophers philosophers.cc)
+target_link_libraries(philosophers Threads::Threads)
+
+add_executable(packaged_task packaged_task.cc)
+target_link_libraries(packaged_task Threads::Threads)
+
+add_executable(producer_consumer producer_consumer.cc)
+target_link_libraries(producer_consumer Threads::Threads)
