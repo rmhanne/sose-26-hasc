@@ -128,7 +128,7 @@ void two_plummer (int n, long int seed,
   // make a plummer distribution in the first half
   auto radius = plummer(n/2,seed,x,v,m);
   // define velocity
-  double V = radius/200.0;
+  double V = radius/1000.0;
   std::cout << "start velocity is " << V << std::endl;
   // copy to second half at a distance of radius
   for (int i=0; i<n/2; i++)
@@ -158,9 +158,9 @@ void two_plummer (int n, long int seed,
       x[i][0] -= s[0]; 
       x[i][1] -= s[1]; 
       x[i][2] -= s[2]; 
-      v[i][0] -= t[0]; 
-      v[i][1] -= t[1]; 
-      v[i][2] -= t[2]; 
+      // v[i][0] -= t[0]; 
+      // v[i][1] -= t[1]; 
+      // v[i][2] -= t[2]; 
     }
 }
 
