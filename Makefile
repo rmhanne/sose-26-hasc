@@ -5,8 +5,8 @@ CC = g++-mp-9
 
 # compilation flags without GMP stuff
 # no vectorization
-//CCFLAGS = -O0
-//CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -fno-math-errno -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
+#CCFLAGS = -O0
+#CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -fno-math-errno -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 # AVX2 with vector class library
 CCFLAGS = -std=c++17 -O3 -mavx2 -mfma -fno-trapping-math -fno-math-errno -fabi-version=0 -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 
@@ -29,10 +29,12 @@ all: scalar_product_v1\
      peterson\
      philosophers\
      barrier\
+     power_method\
      packaged_task\
      producer_consumer\
      nbody_vanilla\
-     nbody_optimized
+     nbody_vectorized\
+     nbody_vectorized_threaded
 
 scalar_product_v0: scalar_product_v0.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
@@ -60,13 +62,17 @@ matvec_v2: matvec_v2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_vanilla: nbody_vanilla.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
-nbody_optimized: nbody_optimized.cc Makefile nbody_generate.hh nbody_io.hh
+nbody_vectorized: nbody_vectorized.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 peterson: peterson.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 philosophers: philosophers.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 barrier: barrier.cc Makefile
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+power_method: power_method.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 packaged_task: packaged_task.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
@@ -84,13 +90,15 @@ clean:
         matmul_seq_v1 \
         matmul_seq_v2 \
         pointer_chasing \
-        transpose_v1\
-	matvec_v1\
-	matvec_v2\
-	peterson\
-	philosophers\
-	barrier\
-	packaged_task\
-	producer_consumer\
-	nbody_vanilla\
-	nbody_ooptimized
+        transpose_v1 \
+	matvec_v1 \
+	matvec_v2 \
+	peterson \
+	philosophers \
+	barrier \
+	power_method \
+	packaged_task \
+	producer_consumer \
+	nbody_vanilla \
+	nbody_vectorized \
+	nbody_vectorized_threaded
