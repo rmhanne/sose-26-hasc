@@ -52,7 +52,7 @@ void cube (int n, long int seed, double size, double m0, double mdelta,
  */ 
 template<typename doubleX>
 double plummer (int n, long int seed,
-                doubleX x[], doubleX v[], double m[])
+                doubleX x[], doubleX v[], double m[], const int verbosity=1)
 {
   int i;
   double radius,theta,phi,X,Y,velocity,maxr=-1.0;
@@ -90,7 +90,8 @@ double plummer (int n, long int seed,
       t[1] += m[i]*v[i][1];
       t[2] += m[i]*v[i][2];
     }
-  printf("center of mass: %g %g %g\n",s[0],s[1],s[2]);
+  if (verbosity>0)
+    printf("center of mass: %g %g %g\n",s[0],s[1],s[2]);
   for (i=0; i<n; i++)
     {
       x[i][0] -= s[0]; 
@@ -108,8 +109,10 @@ double plummer (int n, long int seed,
       s[1] += m[i]*x[i][1];
       s[2] += m[i]*x[i][2];
     }
-  printf("new center of mass: %g %g %g\n",s[0],s[1],s[2]);
-  printf("maximum radius: %g\n",maxr);
+  if (verbosity>0){
+    printf("new center of mass: %g %g %g\n",s[0],s[1],s[2]);
+    printf("maximum radius: %g\n",maxr);
+  }
   return maxr;
 }
 
@@ -117,7 +120,7 @@ double plummer (int n, long int seed,
 // and with slight tngential velocity component
 template<typename doubleX>
 void two_plummer (int n, long int seed,
-                  doubleX x[], doubleX v[], double m[])
+                  doubleX x[], doubleX v[], double m[], const int verbosity=1)
 {
   // check if n iss even
   if (n%2!=0)
@@ -126,10 +129,11 @@ void two_plummer (int n, long int seed,
       exit(1);
     }
   // make a plummer distribution in the first half
-  auto radius = plummer(n/2,seed,x,v,m);
+  auto radius = plummer(n/2,seed,x,v,m, verbosity);
   // define velocity
   double V = radius/1000.0;
-  std::cout << "start velocity is " << V << std::endl;
+  if (verbosity>0)
+    std::cout << "start velocity is " << V << std::endl;
   // copy to second half at a distance of radius
   for (int i=0; i<n/2; i++)
     {
