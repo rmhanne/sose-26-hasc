@@ -23,6 +23,7 @@ all: scalar_product_v1\
      scalar_product_v3\
      scalar_product_v4\
      scalar_product_v5\
+     scalar_product_ms\
      matmul_seq_v1\
      matmul_seq_v2\
      matmul_omp\
@@ -41,7 +42,8 @@ all: scalar_product_v1\
      nbody_omp\
      nbody_vectorized_threaded\
      jacobi_seq\
-     hello_openmp
+     hello_openmp\
+     hello_sendrecv
 
 scalar_product_v0: scalar_product_v0.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
@@ -54,6 +56,8 @@ scalar_product_v3: scalar_product_v3.cc Makefile
 scalar_product_v4: scalar_product_v4.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 scalar_product_v5: scalar_product_v5.cc Makefile
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+scalar_product_ms: scalar_product_ms.cc Makefile MessageSystem.hh Barrier.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_seq_v1: matmul_seq_v1.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
@@ -93,6 +97,8 @@ jacobi_seq: jacobi_seq.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 hello_openmp: hello_openmp.cc Makefile
 	$(CC) $(CCFLAGS_OMP) -o $@ $< $(LFLAGS_OMP)
+hello_sendrecv: hello_sendrecv.cc Makefile MessageSystem.hh
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 
 clean:
 	rm -f *.o \
@@ -102,6 +108,7 @@ clean:
         scalar_product_v3 \
         scalar_product_v4 \
         scalar_product_v5 \
+        scalar_product_ms \
         matmul_seq_v1 \
         matmul_seq_v2 \
         matmul_omp \
@@ -120,4 +127,5 @@ clean:
 	nbody_omp \
 	nbody_vectorized_threaded \
 	jacobi_seq \
-	hello_openmp
+	hello_openmp \
+	hello_sendrecv
