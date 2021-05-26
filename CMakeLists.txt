@@ -83,7 +83,6 @@ add_executable(transpose_v1 transpose_v1.cc)
 
 add_executable(transpose_vectorized transpose_vectorized.cc)
 
-
 if (HASC_HAVE_MKL)
 find_package (Eigen3 3.3 NO_MODULE)
 if (TARGET Eigen3::Eigen)
@@ -103,6 +102,11 @@ endif (HASC_HAVE_MKL)
 # =============
 
 add_executable(nbody_vanilla nbody_vanilla.cc)
+
+add_executable(nbody_vectorized nbody_vectorized.cc)
+
+add_executable(nbody_vectorized_threaded nbody_vectorized_threaded.cc)
+target_link_libraries(nbody_vectorized_threaded Threads::Threads)
 
 
 # ==============
@@ -133,3 +137,24 @@ target_link_libraries(producer_consumer Threads::Threads)
 
 add_executable(power_method power_method.cc)
 target_link_libraries(power_method Threads::Threads)
+
+# ======
+# OpenMP
+# ======
+
+find_package(OpenMP REQUIRED)
+
+add_executable(hello_openmp hello_openmp.cc)
+target_link_libraries(hello_openmp PRIVATE OpenMP::OpenMP_CXX)
+
+add_executable(matmul_omp matmul_omp.cc)
+target_link_libraries(matmul_omp PRIVATE OpenMP::OpenMP_CXX)
+
+add_executable(nbody_omp nbody_omp.cc)
+target_link_libraries(nbody_omp PRIVATE OpenMP::OpenMP_CXX)
+
+# ==============
+# Jacobi stencil
+# ==============
+
+add_executable(jacobi_seq jacobi_seq.cc)
