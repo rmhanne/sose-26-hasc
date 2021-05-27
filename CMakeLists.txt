@@ -27,7 +27,9 @@ option(HASC_HAVE_MKL "Intel-mkl is installed and all path variables are set so i
 add_compile_options(
        # gcc compiler flags
        # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-strict-aliasing
-       -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-trapping-math -fno-math-errno -fargument-noalias
+       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-trapping-math -fno-math-errno -fargument-noalias
+       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno -fargument-noalias
+       -Wall -std=c++20 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno -fargument-noalias
        #
        # clang compiler flags
        # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno
@@ -108,6 +110,19 @@ add_executable(nbody_vectorized nbody_vectorized.cc)
 add_executable(nbody_vectorized_threaded nbody_vectorized_threaded.cc)
 target_link_libraries(nbody_vectorized_threaded Threads::Threads)
 
+# set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+find_package (TBB)
+if (TBB_FOUND)
+  add_executable(nbody_tbb nbody_tbb.cc)
+  target_link_libraries(nbody_tbb Threads::Threads)
+  target_link_libraries(nbody_tbb TBB::tbb)
+endif (TBB_FOUND)
+
+add_executable(nbody_threads nbody_threads.cc)
+target_link_libraries(nbody_threads Threads::Threads)
+
+add_executable(nbody_vectorized_threaded_v2 nbody_vectorized_threaded_v2.cc)
+target_link_libraries(nbody_vectorized_threaded_v2 Threads::Threads)
 
 # ==============
 # Other examples
