@@ -2,6 +2,7 @@
 #CC = g++-mp-9
 # CC = g++-8
 CC = g++-mp-10
+CCMPI = mpicxx-openmpi-gcc10
 
 # compilation flags without GMP stuff
 # no vectorization
@@ -15,6 +16,7 @@ CCFLAGS_OMP = -fopenmp -std=c++20 -O3 -mavx2 -mfma -fno-trapping-math -fabi-vers
 # linker flags without GMP stuff
 LFLAGS = -lm -lpthread
 LFLAGS_OMP = -lm -lpthread
+LFLAGS_MPI = -lm -lpthread
 
 
 all: scalar_product_v1\
@@ -39,10 +41,12 @@ all: scalar_product_v1\
      producer_consumer\
      nbody_vanilla\
      nbody_vectorized\
+     nbody_mpi\
      nbody_omp\
      nbody_vectorized_threaded\
      jacobi_seq\
      hello_openmp\
+     hello_mpi\
      hello_sendrecv
 
 scalar_product_v0: scalar_product_v0.cc Makefile
@@ -81,6 +85,8 @@ nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_omp: nbody_omp.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS_OMP) -o $@ $< $(LFLAGS_OMP)
+nbody_mpi: nbody_mpi.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CCMPI) $(CCFLAGS) -o $@ $< $(LFLAGS_MPI)
 peterson: peterson.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 philosophers: philosophers.cc Makefile
@@ -99,6 +105,8 @@ hello_openmp: hello_openmp.cc Makefile
 	$(CC) $(CCFLAGS_OMP) -o $@ $< $(LFLAGS_OMP)
 hello_sendrecv: hello_sendrecv.cc Makefile MessageSystem.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+hello_mpi: hello_mpi.cc Makefile
+	$(CCMPI) $(CCFLAGS) -o $@ $< $(LFLAGS_MPI)
 
 clean:
 	rm -f *.o \
@@ -128,4 +136,5 @@ clean:
 	nbody_vectorized_threaded \
 	jacobi_seq \
 	hello_openmp \
+	hello_mpi \
 	hello_sendrecv
