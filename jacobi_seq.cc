@@ -102,6 +102,11 @@ void jacobi_blocked (std::shared_ptr<GlobalContext> context)
 				+uold[i1*n+i0+1]+uold[i1*n+i0+n]);
       std::swap(uold,unew);
     }
+  for (int I1=1; I1<1+blocksB; I1+=B)
+    for (int i1=I1; i1<I1+B; i1++)
+      for (int i0=1+blocksB; i0<n-1; i0++)
+        unew[i1*n+i0] = 0.25*(uold[i1*n+i0-n]+uold[i1*n+i0-1]
+                              +uold[i1*n+i0+1]+uold[i1*n+i0+n]);
 
   // result should be in u1
   if (context->u1!=uold)
