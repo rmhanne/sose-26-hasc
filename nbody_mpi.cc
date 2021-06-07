@@ -12,6 +12,7 @@
 #include "time_experiment.hh"
 #include "vcl/vectorclass.h"
 
+
 #ifndef __GNUC__
 #define __restrict__
 #endif
@@ -34,8 +35,10 @@ int blocks_total; // the total number of blocks of size B
 int blocks_per_rank; // number of blocks of size B in eaach rank
 int masses_per_rank; // number of masses in each rank
 
+//#include "acceleration_async.cc"
+
 // version 3: 1x4 interaction, column major
-void acceleration (int n, double3* __restrict__ x, double* __restrict__ m,
+void acceleration_blocking (int n, double3* __restrict__ x, double* __restrict__ m,
                    double3* __restrict__ a)
 {
   Vec4d Ai; // acceleration row
@@ -364,7 +367,7 @@ void leapfrog (int n, double dt, double3* __restrict__ x, double3* __restrict__ 
       a[i][j] = 0.0;
   
   // compute new acceleration: n*(n-1)*13 flops
-  acceleration(n,x,m,a);
+  acceleration_blocking(n,x,m,a);
 
   // update velocity: 6n flops
   for (int i=0; i<n; i++)
@@ -556,18 +559,22 @@ int main (int argc, char** argv)
   // initialize timestep and write first file
   if (rank==0)
     std::cout << "step=" << k << " finalstep=" << timesteps << " time=" << t << " dt=" << dt << std::endl;
+  double elapsed_total = 0.0;
   auto start = get_time_stamp();
 
   // do time steps
   k += 1;
+  int cnt=0;
   for (; k<=timesteps; k++)
     {
       leapfrog(masses_per_rank,dt,x,v,m,a);
       t += dt;
+      cnt++;
       if (k%mod==0)
         {
           auto stop = get_time_stamp();
           double elapsed = get_duration_seconds(start,stop);
+	  elapsed_total += elapsed;
           double flop = mod*(13.0*n*(n-1.0)+12.0*n);
           if (rank==0)
             printf("%d: %g seconds for %g ops = %g GFLOPS\n",rank,elapsed,flop,flop/elapsed/1E9);
@@ -594,6 +601,10 @@ int main (int argc, char** argv)
           start = get_time_stamp();
         }
     }
+
+  double flop = cnt*(13.0*n*(n-1.0)+12.0*n);
+  if (rank==0)
+    printf("%g seconds for %g ops = %g GFLOPS\n",elapsed_total,flop,flop/elapsed_total/1E9);
 
   // clean up mpi
   MPI_Finalize();
