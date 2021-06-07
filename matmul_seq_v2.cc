@@ -38,7 +38,7 @@ double compare (int n, double A1[N][N], double A2[N][N])
 
   for (i=0; i<n; i++)
     for (j=0; j<n; j++)
-      sum += std::abs(A1[i][j]-A2[i][j]);
+      sum += (A1[i][j]-A2[i][j])*(A1[i][j]-A2[i][j]);
   return sum;
 }
 

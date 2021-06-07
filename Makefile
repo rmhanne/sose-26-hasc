@@ -3,20 +3,24 @@
 # CC = g++-8
 CC = g++-mp-10
 CCMPI = mpicxx-openmpi-gcc10
+CCTBB = g++-mp-10
 
 # compilation flags without GMP stuff
 # no vectorization
 #CCFLAGS = -O0
 #CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 # AVX2 with vector class library
-CCFLAGS_NOVEC = -std=c++20 -O3 -ffast-math -fargument-noalias
+CCFLAGS_NOVEC = -std=c++20 -O3 -funroll-loops -ffast-math -fargument-noalias
 CCFLAGS = -std=c++20 -O3 -mavx2 -mfma -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 CCFLAGS_OMP = -fopenmp -std=c++20 -O3 -mavx2 -mfma -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
+//CCFLAGS_TBB = -std=c++17 -Ofast -xHost -fargument-noalias
+CCFLAGS_TBB = -std=c++20 -O3 -mavx2 -mfma -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 
-# linker flags without GMP stuff
+# linker flags
 LFLAGS = -lm -lpthread
 LFLAGS_OMP = -lm -lpthread
 LFLAGS_MPI = -lm -lpthread
+LFLAGS_TBB = -lm -ltbb
 
 
 all: scalar_product_v1\
@@ -44,9 +48,12 @@ all: scalar_product_v1\
      nbody_mpi\
      nbody_omp\
      nbody_vectorized_threaded\
+     nbody_tbb_v2\
      jacobi_seq\
+     jacobi_tbb\
      hello_openmp\
      hello_mpi\
+     hello_tbb\
      hello_sendrecv
 
 scalar_product_v0: scalar_product_v0.cc Makefile
@@ -78,11 +85,13 @@ matvec_v1: matvec_v1.cc Makefile
 matvec_v2: matvec_v2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_vanilla: nbody_vanilla.cc Makefile nbody_generate.hh nbody_io.hh
-	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+	$(CC) $(CCFLAGS_NOVEC) -o $@ $< $(LFLAGS)
 nbody_vectorized: nbody_vectorized.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+nbody_tbb_v2: nbody_tbb_v2.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CCTBB) $(CCFLAGS_TBB) -o $@ $< $(LFLAGS_TBB)
 nbody_omp: nbody_omp.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS_OMP) -o $@ $< $(LFLAGS_OMP)
 nbody_mpi: nbody_mpi.cc Makefile nbody_generate.hh nbody_io.hh
@@ -101,12 +110,16 @@ producer_consumer: producer_consumer.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 jacobi_seq: jacobi_seq.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+jacobi_tbb: jacobi_tbb.cc Makefile
+	$(CCTBB) $(CCFLAGS_TBB) -o $@ $< $(LFLAGS_TBB)
 hello_openmp: hello_openmp.cc Makefile
 	$(CC) $(CCFLAGS_OMP) -o $@ $< $(LFLAGS_OMP)
 hello_sendrecv: hello_sendrecv.cc Makefile MessageSystem.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 hello_mpi: hello_mpi.cc Makefile
 	$(CCMPI) $(CCFLAGS) -o $@ $< $(LFLAGS_MPI)
+hello_tbb: hello_tbb.cc Makefile
+	$(CCTBB) $(CCFLAGS_TBB) -o $@ $< $(LFLAGS_TBB)
 
 clean:
 	rm -f *.o \
@@ -133,8 +146,12 @@ clean:
 	nbody_vanilla \
 	nbody_vectorized \
 	nbody_omp \
+	nbody_mpi \
 	nbody_vectorized_threaded \
+	nbody_tbb_v2 \
 	jacobi_seq \
+	jacobi_tbb \
 	hello_openmp \
 	hello_mpi \
+	hello_tbb \
 	hello_sendrecv

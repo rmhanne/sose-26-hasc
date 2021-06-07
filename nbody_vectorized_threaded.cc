@@ -341,20 +341,24 @@ struct GlobalContext
 void simulation (std::shared_ptr<GlobalContext> context, int rank)
 {
   context->barrier.wait(rank);
+  double elapsed_total = 0.0;
   auto start = get_time_stamp();
 
   // do time steps
   int k = context->k + 1;
+  int cnt=0;
   for (; k<=context->timesteps; k++)
     {
       leapfrog(context->nthreads,rank,context->barrier,context->n,context->dt,context->x,context->v,context->m,context->a);
       if (rank==0) context->t += context->dt;
-	  
+      cnt++;
+      
       if (k%context->mod==0)
 	{
 	  context->barrier.wait(rank);
 	  auto stop = get_time_stamp();
 	  double elapsed = get_duration_seconds(start,stop);
+	  elapsed_total += elapsed;
 	  double flop = context->mod*(13.0*context->n*(context->n-1.0)+12.0*context->n);
 	  if (rank==0)
 	    {
@@ -368,6 +372,10 @@ void simulation (std::shared_ptr<GlobalContext> context, int rank)
 	  start = get_time_stamp();
 	}
     }
+  int n=context->n;
+  double flop = cnt*(13.0*n*(n-1.0)+12.0*n);
+  if (rank==0)
+    printf("%g seconds for %g ops = %g GFLOPS\n",elapsed_total,flop,flop/elapsed_total/1E9);
 }
 
 

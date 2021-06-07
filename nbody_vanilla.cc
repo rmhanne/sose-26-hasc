@@ -160,18 +160,22 @@ int main (int argc, char** argv)
 
   // initialize timestep and write first file
   std::cout << "step=" << k << " finalstep=" << timesteps << " time=" << t << " dt=" << dt << std::endl;
+  double elapsed_total = 0.0;
   auto start = get_time_stamp();
 
   // do time steps
   k += 1;
+  int cnt=0;
   for (; k<=timesteps; k++)
     {
       leapfrog(n,dt,x,v,m,a);
       t += dt;
+      cnt++;
       if (k%mod==0)
         {
           auto stop = get_time_stamp();
           double elapsed = get_duration_seconds(start,stop);
+	  elapsed_total += elapsed;
           double flop = mod*(13.0*n*(n-1.0)+12.0*n);
           printf("%g seconds for %g ops = %g GFLOPS\n",elapsed,flop,flop/elapsed/1E9);
 
@@ -184,6 +188,9 @@ int main (int argc, char** argv)
           start = get_time_stamp();
         }
     }
+
+  double flop = cnt*(13.0*n*(n-1.0)+12.0*n);
+  printf("%g seconds for %g ops = %g GFLOPS\n",elapsed_total,flop,flop/elapsed_total/1E9);
 
   return 0;
 }
