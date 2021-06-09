@@ -12,7 +12,7 @@
 const int P = 24;   // basic block size is a multiple of 4, 8 and 12
 const int Q = 4;    // multiplier
 const int M = P*Q;  // tile size
-const int N = M*64;// maximum problem size; 
+const int N = M*128;// maximum problem size; 
 // double A1[N][N] __attribute__((aligned(64))); // input matrix 1
 // double B1[N][N] __attribute__((aligned(64))); // input matrix 2
 // double C1[N][N] __attribute__((aligned(64))); // output matrix 1

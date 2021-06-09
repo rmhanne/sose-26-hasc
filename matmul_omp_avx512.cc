@@ -12,7 +12,7 @@
 const int P = 12;   // basic block size is a multiple of 4, 8 and 12
 const int Q = 8;    // multiplier=SIMD width
 const int M = P*Q;  // tile size
-const int N = M*64;// maximum problem size; 
+const int N = M*128;// maximum problem size; 
 
 // row-major index mapping
 #define INDEX(i,j,n) ((i)*n+(j))
