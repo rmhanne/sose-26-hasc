@@ -8,6 +8,8 @@
 #include <list>
 #include <map>
 #include <chrono>
+#include <atomic>
+
 #include "Barrier.hh"
 
 class MessageSystem {
@@ -48,7 +50,6 @@ class MessageSystem {
 
   // one message queue for each thread to receive
   using EnvelopeSharedPtr = std::shared_ptr<Envelope>; // internal use
-  using MessageID = EnvelopeSharedPtr; // external use
   std::vector<std::list<EnvelopeSharedPtr>> messages;
   // locks to protect the queues
   std::vector<std::mutex> locks;
@@ -56,6 +57,8 @@ class MessageSystem {
   std::vector<std::condition_variable> cvs;
 
 public:
+  using MessageID = EnvelopeSharedPtr; // external use
+
   MessageSystem (int _P) : P(_P), b(_P), locks(_P), messages(_P), cvs(_P)
   {}
 

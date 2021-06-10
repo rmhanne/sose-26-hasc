@@ -6,7 +6,7 @@ class VectorSumKernel
 {
   std::vector<double> &x,&y,&z;
 public:
-  VectorSumWorker (std::vector<double>& _x, std::vector<double>& _y,
+  VectorSumKernel (std::vector<double>& _x, std::vector<double>& _y,
                    std::vector<double>& _z)
     : x(_x), y(_y), z(_z)
   {}
