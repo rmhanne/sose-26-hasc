@@ -1,25 +1,27 @@
 cmake_minimum_required (VERSION 3.12)
 project(hasc)
+enable_language(CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ==============
 # Compiler flags
 # ==============
 
-add_compile_options(
-       # gcc compiler flags
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-strict-aliasing
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-trapping-math -fno-math-errno -fargument-noalias
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno -fargument-noalias
-       -Wall -std=c++20 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno -fargument-noalias
-       #
-       # clang compiler flags
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno
-       #
-       # icc compiler flags
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fno-trapping-math -fno-math-errno -fargument-noalias
-       # Optimized build with debug statements -> useful for performance investigation with intel-advisor
-       # -Wall -std=c++17 -O3 -march=native -funroll-loops -ffast-math -fopt-info-vec -fno-trapping-math -fno-math-errno -fargument-noalias -g
-)
+# Notes:
+# - icc will not be able to build everything!
+# - dpcpp also has some problems, eg with code that uses eigen
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU|Intel")
+  add_compile_options(-Wall -O3 -march=native -fno-trapping-math -funroll-loops -ffast-math -fargument-noalias)
+endif ()
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  add_compile_options(-fabi-version=0)
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+endif ()
+
 add_compile_definitions(
         NDEBUG
 )
@@ -31,12 +33,14 @@ add_compile_definitions(
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-find_package(OpenMP REQUIRED)
+find_package(OpenMP)
 
-find_package(MPI REQUIRED)
+find_package(MPI)
 
 find_package (TBB)
 
+# The vectorclass library should be checked out in a subfolder called vcl. If
+# you don't have it you probably didn't clone with `git clone --recursive ...`
 include_directories(vcl)
 
 # It seems as if there is no official find_package for the MKL library. There
@@ -60,6 +64,9 @@ include_directories(vcl)
 
 option(HASC_HAVE_MKL "Intel-mkl is installed and all path variables are set so it can be found. Work around not having a find_package(MKL)." OFF)
 
+# Similar issue with SYCL
+
+option(HASC_HAVE_SYCL "You use a compiler that knows how to compile code with sycl statements." OFF)
 
 # =======================
 # Scalar product examples
@@ -93,11 +100,15 @@ add_executable(matmul_seq_v1 matmul_seq_v1.cc)
 
 add_executable(matmul_seq_v2 matmul_seq_v2.cc)
 
-add_executable(matmul_omp matmul_omp.cc)
-target_link_libraries(matmul_omp PRIVATE OpenMP::OpenMP_CXX)
+if (OpenMP_FOUND)
+  add_executable(matmul_omp matmul_omp.cc)
+  target_link_libraries(matmul_omp PRIVATE OpenMP::OpenMP_CXX)
+endif (OpenMP_FOUND)
 
-add_executable(matmul_omp_avx512 matmul_omp_avx512.cc)
-target_link_libraries(matmul_omp_avx512 PRIVATE OpenMP::OpenMP_CXX)
+if (OpenMP_FOUND)
+  add_executable(matmul_omp_avx512 matmul_omp_avx512.cc)
+  target_link_libraries(matmul_omp_avx512 PRIVATE OpenMP::OpenMP_CXX)
+endif (OpenMP_FOUND)
 
 add_executable(transpose_v1 transpose_v1.cc)
 
@@ -129,11 +140,15 @@ add_executable(nbody_vanilla nbody_vanilla.cc)
 
 add_executable(nbody_vectorized nbody_vectorized.cc)
 
-add_executable(nbody_mpi nbody_mpi.cc)
-target_link_libraries(nbody_mpi PRIVATE MPI::MPI_CXX)
+if (MPI_FOUND)
+  add_executable(nbody_mpi nbody_mpi.cc)
+  target_link_libraries(nbody_mpi PRIVATE MPI::MPI_CXX)
+endif (MPI_FOUND)
 
-add_executable(nbody_omp nbody_omp.cc)
-target_link_libraries(nbody_omp PRIVATE OpenMP::OpenMP_CXX)
+if (OpenMP_FOUND)
+  add_executable(nbody_omp nbody_omp.cc)
+  target_link_libraries(nbody_omp PRIVATE OpenMP::OpenMP_CXX)
+endif (OpenMP_FOUND)
 
 add_executable(nbody_vectorized_threaded nbody_vectorized_threaded.cc)
 target_link_libraries(nbody_vectorized_threaded Threads::Threads)
@@ -150,8 +165,15 @@ if (TBB_FOUND)
   target_link_libraries(nbody_tbb_v2 TBB::tbb)
 endif (TBB_FOUND)
 
+# This one uses atomic updates for data type double and needs C++-20
 add_executable(nbody_threads nbody_threads.cc)
 target_link_libraries(nbody_threads Threads::Threads)
+set_property(TARGET nbody_threads PROPERTY CXX_STANDARD 20)
+
+if (HASC_HAVE_SYCL)
+  add_executable(nbody_sycl nbody_sycl.cc)
+endif (HASC_HAVE_SYCL)
+
 
 # ==============
 # Other examples
@@ -185,8 +207,10 @@ target_link_libraries(producer_consumer Threads::Threads)
 # OpenMP
 # ======
 
-add_executable(hello_openmp hello_openmp.cc)
-target_link_libraries(hello_openmp PRIVATE OpenMP::OpenMP_CXX)
+if (OpenMP_FOUND)
+  add_executable(hello_openmp hello_openmp.cc)
+  target_link_libraries(hello_openmp PRIVATE OpenMP::OpenMP_CXX)
+endif (OpenMP_FOUND)
 
 # ===
 # TBB
@@ -204,8 +228,10 @@ endif (TBB_FOUND)
 add_executable(hello_sendrecv hello_sendrecv.cc)
 target_link_libraries(hello_sendrecv Threads::Threads)
 
-add_executable(hello_mpi hello_mpi.cc)
-target_link_libraries(hello_mpi PRIVATE MPI::MPI_CXX)
+if (MPI_FOUND)
+  add_executable(hello_mpi hello_mpi.cc)
+  target_link_libraries(hello_mpi PRIVATE MPI::MPI_CXX)
+endif (MPI_FOUND)
 
 # ==============
 # Jacobi stencil
@@ -217,3 +243,11 @@ if (TBB_FOUND)
   add_executable(jacobi_tbb jacobi_tbb.cc)
   target_link_libraries(jacobi_tbb TBB::tbb)
 endif (TBB_FOUND)
+
+# ====
+# SYCL
+# ====
+
+if (HASC_HAVE_SYCL)
+  add_executable(hello_sycl hello_sycl.cc)
+endif (HASC_HAVE_SYCL)
