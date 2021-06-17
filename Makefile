@@ -52,6 +52,7 @@ all: scalar_product_v1\
      producer_consumer\
      nbody_vanilla\
      nbody_vectorized\
+     nbody_vectorized_v2\
      nbody_mpi\
      nbody_omp\
      nbody_mpi_omp\
@@ -99,6 +100,8 @@ matvec_v2: matvec_v2.cc Makefile
 nbody_vanilla: nbody_vanilla.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS_BASE) -o $@ $< $(LFLAGS)
 nbody_vectorized: nbody_vectorized.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+nbody_vectorized_v2: nbody_vectorized_v2.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
@@ -164,6 +167,7 @@ clean:
 	producer_consumer \
 	nbody_vanilla \
 	nbody_vectorized \
+	nbody_vectorized_v2 \
 	nbody_omp \
 	nbody_mpi \
 	nbody_vectorized_threaded \
