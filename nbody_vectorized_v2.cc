@@ -119,46 +119,57 @@ void acceleration_blocked_full (int n, double* __restrict__ x, double* __restric
 void acceleration_blocked_vectorized (int n, double* __restrict__ x, double* __restrict__ m, double* __restrict__ a)
 {
   using VecWd = Vec4d;
+  VecWd Xi0,Xi1,Xi2;
+  VecWd Ai0,Ai1,Ai2;
   VecWd Di0,Di1,Di2;
-  VecWd Xj0,Xj1,Xj2,Xi;
-  VecWd R,R3;
-  VecWd Ai,M,F;
-  VecWd GG = VecWd(G);
+  VecWd R3;
+  VecWd S,T,U; // auxiiliary registers
     
   for (int I=0; I<n; I+=B)
     for (int J=0; J<n; J+=B)
-      for (int j=J; j<J+B; j++)
+      for (int i=I; i<I+B; i+=W)
 	{
-	  // load things only depending on mass j
-	  Xj0 = VecWd(x[j]);
-	  Xj1 = VecWd(x[n+j]);
-	  Xj2 = VecWd(x[2*n+j]);
-	  M = VecWd(m[j]);
-	  for (int i=I; i<I+B; i+=W)
+	  // load data of mass i
+	  Xi0.load(&x[i]);
+	  Xi1.load(&x[n+i]);
+	  Xi2.load(&x[2*n+i]);
+	  Ai0.load(&a[i]);
+	  Ai1.load(&a[n+i]);
+	  Ai2.load(&a[2*n+i]);
+
+	  // loop over masses j
+	  for (int j=J; j<J+B; j++)
 	    {
-	      // now we compute the interaction of W masses with mass j
+	      // now we compute the interaction of W masses with the mass j
 	      // distance vectors
-	      Xi.load(&x[i]);
-	      Di0 = Xj0 - Xi;
-	      Xi.load(&x[n+i]);
-	      Di1 = Xj1 - Xi;
-	      Xi.load(&x[2*n+i]);
-	      Di2 = Xj2 - Xi;
+	      Di0.load(&x[j]);
+	      Di1.load(&x[n+j]);
+	      Di2.load(&x[2*n+j]);
+	      Di0 -= Xi0;
+	      Di1 -= Xi1;
+	      Di2 -= Xi2;
 
 	      // compute W distances^3
 	      R3 = VecWd(epsilon2);
 	      R3 = mul_add(Di0,Di0,R3);
 	      R3 = mul_add(Di1,Di1,R3);
 	      R3 = mul_add(Di2,Di2,R3);
-	      R = sqrt(R3);
-	      R3 *= R;
+	      S = sqrt(R3);
+	      R3 *= S;
 	      
 	      // update acceleration
-	      F = GG/R3; F *= M;
-	      Ai.load(&a[i]); Ai = mul_add(Di0,F,Ai); Ai.store(&a[i]);
-	      Ai.load(&a[n+i]); Ai = mul_add(Di1,F,Ai); Ai.store(&a[n+i]);
-	      Ai.load(&a[2*n+i]); Ai = mul_add(Di2,F,Ai); Ai.store(&a[2*n+i]);
+	      S = VecWd(m[j]);
+	      T = VecWd(G);
+	      U = T/R3; U *= S;
+	      Ai0 = mul_add(Di0,U,Ai0);
+	      Ai1 = mul_add(Di1,U,Ai1);
+	      Ai2 = mul_add(Di2,U,Ai2);
 	    }
+
+	  // write back accelerations
+	  Ai0.store(&a[i]);
+	  Ai1.store(&a[n+i]);
+	  Ai2.store(&a[2*n+i]);
 	}
 }
 
