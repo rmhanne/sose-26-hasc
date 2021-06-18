@@ -54,6 +54,7 @@ all: scalar_product_v1\
      nbody_vectorized\
      nbody_vectorized_v2\
      nbody_mpi\
+     nbody_mpi_nonblocking\
      nbody_omp\
      nbody_mpi_omp\
      nbody_vectorized_threaded\
@@ -112,6 +113,8 @@ nbody_sycl: nbody_sycl.cc Makefile nbody_generate.hh nbody_io.hh
 nbody_omp: nbody_omp.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) $(OMPFLAGS) -o $@ $< $(LFLAGS_OMP)
 nbody_mpi: nbody_mpi.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CCMPI) $(CCFLAGS) -o $@ $< $(LFLAGS_MPI)
+nbody_mpi_nonblocking: nbody_mpi_nonblocking.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CCMPI) $(CCFLAGS) -o $@ $< $(LFLAGS_MPI)
 nbody_mpi_omp: nbody_mpi_omp.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CCMPI) $(CCFLAGS) $(OMPFLAGS) -o $@ $< $(LFLAGS_MPI) $(LFLAGS_OMP)

@@ -143,6 +143,17 @@ add_executable(nbody_vectorized nbody_vectorized.cc)
 if (MPI_FOUND)
   add_executable(nbody_mpi nbody_mpi.cc)
   target_link_libraries(nbody_mpi PRIVATE MPI::MPI_CXX)
+
+  add_executable(nbody_mpi_nonblocking nbody_mpi_nonblocking.cc)
+  target_link_libraries(nbody_mpi_nonblocking PRIVATE MPI::MPI_CXX)
+
+
+if (OpenMP_FOUND)
+  add_executable(nbody_mpi_omp nbody_mpi_omp.cc)
+  target_link_libraries(nbody_mpi_omp PRIVATE OpenMP::OpenMP_CXX)
+  target_link_libraries(nbody_mpi_omp PRIVATE MPI::MPI_CXX)
+endif (OpenMP_FOUND)
+
 endif (MPI_FOUND)
 
 if (OpenMP_FOUND)
