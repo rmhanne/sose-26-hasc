@@ -68,7 +68,155 @@ void matmul1 (int n, double A[], double B[], double C[])
 }
 
 // tiling and SIMD with vectorization of 4x24 blocks
-void matmul4 (int n, double A[], double B[], double C[])
+void matmul4_128 (int n, double A[], double B[], double C[])
+{
+  const int W=2;
+  using VecWd = Vec2d;
+  VecWd CC[4][3], BB[3], AA; // fits exactly 16 registers
+ 
+  if (Q!=8) {
+     std::cout << "Q must be 8" << std::endl;
+     return;
+  } 
+  if (M%Q!=0) {
+     std::cout << "M must be a multiple of Q" << std::endl;
+     return;
+  } 
+  if (M%(3*Q)!=0) {
+     std::cout << "M must be a multiple of 3*Q" << std::endl;
+     return;
+  } 
+  if (n%M!=0) {
+     std::cout << "n must be a multiple of M" << std::endl;
+     return;
+  } 
+#pragma omp parallel for schedule (static) firstprivate(n,A,B,C) private(CC,BB,AA) collapse (2)
+  for (int i=0; i<n; i+=M) // loop over tiles
+    for (int j=0; j<n; j+=M)
+      for (int k=0; k<n; k+=M)
+	// C_ij += A_ik*B_kj where all blocks are MxM
+	// now C_ij is again blocked int 4x(3*W) blocks
+        for (int s=i; s<i+M; s+=4) // loop over 4x3*W blocks of C within the tiles
+          for (int t=j; t<j+M; t+=3*W)
+	    {
+	      // C_st is a 4x24 block in 12 SIMD registers which is loaded now
+	      for (int p=0; p<4; ++p)
+		{
+		  // load store amortized over M/8 matrix multiplications
+		  CC[p][0].load(&C[INDEX(s+p,t,n)]); CC[p][1].load(&C[INDEX(s+p,t+W,n)]); CC[p][2].load(&C[INDEX(s+p,t+2*W,n)]);
+		}
+	      for (int u=k; u<k+M; u+=3*W)
+		// C_st += A_su*B_ut where now A_su is 4x24 and B_ut is 24x24
+		for (int q=0; q<3*W; q+=1) // columns of A / rows of B
+		  {
+		    // 3 loads of B now amortized over ... 12 fmas
+		    BB[0].load(&B[INDEX(u+q,t,n)]); BB[1].load(&B[INDEX(u+q,t+W,n)]); BB[2].load(&B[INDEX(u+q,t+2*W,n)]);
+
+		    AA = VecWd(A[INDEX(s,u+q,n)]); // load-broadcast
+		    CC[0][0] = mul_add(AA,BB[0],CC[0][0]);
+		    CC[0][1] = mul_add(AA,BB[1],CC[0][1]);
+		    CC[0][2] = mul_add(AA,BB[2],CC[0][2]);
+
+		    AA = VecWd(A[INDEX(s+1,u+q,n)]); // load-broadcast
+		    CC[1][0] = mul_add(AA,BB[0],CC[1][0]);
+		    CC[1][1] = mul_add(AA,BB[1],CC[1][1]);
+		    CC[1][2] = mul_add(AA,BB[2],CC[1][2]);
+
+		    AA = VecWd(A[INDEX(s+2,u+q,n)]); // load-broadcast
+		    CC[2][0] = mul_add(AA,BB[0],CC[2][0]);
+		    CC[2][1] = mul_add(AA,BB[1],CC[2][1]);
+		    CC[2][2] = mul_add(AA,BB[2],CC[2][2]);
+
+		    AA = VecWd(A[INDEX(s+3,u+q,n)]); // load-broadcast
+		    CC[3][0] = mul_add(AA,BB[0],CC[3][0]);
+		    CC[3][1] = mul_add(AA,BB[1],CC[3][1]);
+		    CC[3][2] = mul_add(AA,BB[2],CC[3][2]);
+		  }
+	      // write back C
+	      for (int p=0; p<4; ++p)
+		{
+		  // load store amortized over M/8 matrix multiplications
+		  CC[p][0].store(&C[INDEX(s+p,t,n)]); CC[p][1].store(&C[INDEX(s+p,t+W,n)]); CC[p][2].store(&C[INDEX(s+p,t+2*W,n)]);
+		}
+	    }
+}
+
+// tiling and SIMD with vectorization of 4x24 blocks
+void matmul4_256 (int n, double A[], double B[], double C[])
+{
+  const int W=4;
+  using VecWd = Vec4d;
+  VecWd CC[4][3], BB[3], AA; // fits exactly 16 registers
+ 
+  if (Q!=8) {
+     std::cout << "Q must be 8" << std::endl;
+     return;
+  } 
+  if (M%Q!=0) {
+     std::cout << "M must be a multiple of Q" << std::endl;
+     return;
+  } 
+  if (M%(3*Q)!=0) {
+     std::cout << "M must be a multiple of 3*Q" << std::endl;
+     return;
+  } 
+  if (n%M!=0) {
+     std::cout << "n must be a multiple of M" << std::endl;
+     return;
+  } 
+#pragma omp parallel for schedule (static) firstprivate(n,A,B,C) private(CC,BB,AA) collapse (2)
+  for (int i=0; i<n; i+=M) // loop over tiles
+    for (int j=0; j<n; j+=M)
+      for (int k=0; k<n; k+=M)
+	// C_ij += A_ik*B_kj where all blocks are MxM
+	// now C_ij is again blocked int 4x(3*W) blocks
+        for (int s=i; s<i+M; s+=4) // loop over 4x3*W blocks of C within the tiles
+          for (int t=j; t<j+M; t+=3*W)
+	    {
+	      // C_st is a 4x24 block in 12 SIMD registers which is loaded now
+	      for (int p=0; p<4; ++p)
+		{
+		  // load store amortized over M/8 matrix multiplications
+		  CC[p][0].load(&C[INDEX(s+p,t,n)]); CC[p][1].load(&C[INDEX(s+p,t+W,n)]); CC[p][2].load(&C[INDEX(s+p,t+2*W,n)]);
+		}
+	      for (int u=k; u<k+M; u+=3*W)
+		// C_st += A_su*B_ut where now A_su is 4x24 and B_ut is 24x24
+		for (int q=0; q<3*W; q+=1) // columns of A / rows of B
+		  {
+		    // 3 loads of B now amortized over ... 12 fmas
+		    BB[0].load(&B[INDEX(u+q,t,n)]); BB[1].load(&B[INDEX(u+q,t+W,n)]); BB[2].load(&B[INDEX(u+q,t+2*W,n)]);
+
+		    AA = VecWd(A[INDEX(s,u+q,n)]); // load-broadcast
+		    CC[0][0] = mul_add(AA,BB[0],CC[0][0]);
+		    CC[0][1] = mul_add(AA,BB[1],CC[0][1]);
+		    CC[0][2] = mul_add(AA,BB[2],CC[0][2]);
+
+		    AA = VecWd(A[INDEX(s+1,u+q,n)]); // load-broadcast
+		    CC[1][0] = mul_add(AA,BB[0],CC[1][0]);
+		    CC[1][1] = mul_add(AA,BB[1],CC[1][1]);
+		    CC[1][2] = mul_add(AA,BB[2],CC[1][2]);
+
+		    AA = VecWd(A[INDEX(s+2,u+q,n)]); // load-broadcast
+		    CC[2][0] = mul_add(AA,BB[0],CC[2][0]);
+		    CC[2][1] = mul_add(AA,BB[1],CC[2][1]);
+		    CC[2][2] = mul_add(AA,BB[2],CC[2][2]);
+
+		    AA = VecWd(A[INDEX(s+3,u+q,n)]); // load-broadcast
+		    CC[3][0] = mul_add(AA,BB[0],CC[3][0]);
+		    CC[3][1] = mul_add(AA,BB[1],CC[3][1]);
+		    CC[3][2] = mul_add(AA,BB[2],CC[3][2]);
+		  }
+	      // write back C
+	      for (int p=0; p<4; ++p)
+		{
+		  // load store amortized over M/8 matrix multiplications
+		  CC[p][0].store(&C[INDEX(s+p,t,n)]); CC[p][1].store(&C[INDEX(s+p,t+W,n)]); CC[p][2].store(&C[INDEX(s+p,t+2*W,n)]);
+		}
+	    }
+}
+
+// tiling and SIMD with vectorization of 4x24 blocks
+void matmul4_512 (int n, double A[], double B[], double C[])
 {
   Vec8d CC[4][3], BB[3], AA; // fits exactly 16 registers
  
@@ -166,6 +314,7 @@ struct SIMDSelector<8>
 };
 
 // fully parametric version
+// actually this one is much slower than the one above
 // tiling and SIMD with vectorization of products of IxK and KxJ*4 matrices
 // W is the SIMD width
 template<size_t I, size_t J, size_t K, size_t W>
@@ -241,7 +390,7 @@ public:
     delete[] A;
   }
   // run an experiment; can be called several times
-  void run () const {matmul4(n,A,B,C);}
+  void run () const {matmul4_512(n,A,B,C);}
   // report number of operations
   double operations () const
   {return 2.0*n*n*n;}
