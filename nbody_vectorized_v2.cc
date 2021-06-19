@@ -291,6 +291,236 @@ void acceleration_blocked_vectorized (int n, double* __restrict__ x, double* __r
 	}
 }
 
+#ifdef __AVX512F__
+void acceleration_blocked_vectorized_512 (int n, double* __restrict__ x, double* __restrict__ m, double* __restrict__ a)
+{
+  const size_t W=8; // SIMD width
+  using VecWd = typename SIMDSelector<W>::SIMDType; // SIMD type
+
+  // 16 registers!
+  VecWd Xi0,Xi1,Xi2;
+  VecWd Ai0,Ai1,Ai2;
+  VecWd Di0[4],Di1[4],Di2[4];
+  VecWd M[4],R3[4];
+
+  double xj0[4];
+  double xj1[4];
+  double xj2[4];
+  double mj[4];
+
+  for (int I=0; I<n; I+=B)
+    for (int J=0; J<n; J+=B)
+      for (int i=I; i<I+B; i+=W)
+	{
+	  // load data of mass i
+	  Xi0.load(&x[i]);
+	  Xi1.load(&x[n+i]);
+	  Xi2.load(&x[2*n+i]);
+	  Ai0.load(&a[i]);
+	  Ai1.load(&a[n+i]);
+	  Ai2.load(&a[2*n+i]);
+	  
+	  // prefetching of scalar(!) quantities
+	  xj0[0] = x[J];
+	  xj0[1] = x[J+1];
+	  xj0[2] = x[J+2];
+	  xj0[3] = x[J+3];
+	  xj1[0] = x[n+J];
+	  xj1[1] = x[n+J+1];
+	  xj1[2] = x[n+J+2];
+	  xj1[3] = x[n+J+3];
+	  xj2[0] = x[2*n+J];
+	  xj2[1] = x[2*n+J+1];
+	  xj2[2] = x[2*n+J+2];
+	  xj2[3] = x[2*n+J+3];
+	  mj[0] = G*m[J];
+	  mj[1] = G*m[J+1];
+	  mj[2] = G*m[J+2];
+	  mj[3] = G*m[J+3];
+
+	  // loop over masses j
+	  for (int j=J; j<J+B-4; j+=4)
+	    {
+	      // now we compute the interaction of W masses with the mass j
+	      // distance vectors
+	      Di0[0] = VecWd(xj0[0]); // hope that these are loaded now
+	      Di0[1] = VecWd(xj0[1]); // hope that these are loaded now
+	      Di0[2] = VecWd(xj0[2]); // hope that these are loaded now
+	      Di0[3] = VecWd(xj0[3]); // hope that these are loaded now
+	      Di1[0] = VecWd(xj1[0]);
+	      Di1[1] = VecWd(xj1[1]);
+	      Di1[2] = VecWd(xj1[2]);
+	      Di1[3] = VecWd(xj1[3]);
+	      Di2[0] = VecWd(xj2[0]);
+	      Di2[1] = VecWd(xj2[1]);
+	      Di2[2] = VecWd(xj2[2]);
+	      Di2[3] = VecWd(xj2[3]);
+	      xj0[0] = x[j+4]; // prefetch
+	      xj0[0] = x[j+5]; // prefetch
+	      xj0[0] = x[j+6]; // prefetch
+	      xj0[0] = x[j+7]; // prefetch
+	      xj1[0] = x[n+j+4];
+	      xj1[0] = x[n+j+5];
+	      xj1[0] = x[n+j+6];
+	      xj1[0] = x[n+j+7];
+	      xj2[0] = x[2*n+j+4];
+	      xj2[0] = x[2*n+j+5];
+	      xj2[0] = x[2*n+j+6];
+	      xj2[0] = x[2*n+j+7];
+
+	      Di0[0] -= Xi0;
+	      Di0[1] -= Xi0;
+	      Di0[2] -= Xi0;
+	      Di0[3] -= Xi0;
+	      Di1[0] -= Xi1;
+	      Di1[1] -= Xi1;
+	      Di1[2] -= Xi1;
+	      Di1[3] -= Xi1;
+	      Di2[0] -= Xi2;
+	      Di2[1] -= Xi2;
+	      Di2[2] -= Xi2;
+	      Di2[3] -= Xi2;
+
+	      // compute W distances^3
+	      R3[0] = VecWd(epsilon2);
+	      R3[1] = VecWd(epsilon2);
+	      R3[2] = VecWd(epsilon2);
+	      R3[3] = VecWd(epsilon2);
+	      R3[0] = mul_add(Di0[0],Di0[0],R3[0]);
+	      R3[1] = mul_add(Di0[1],Di0[1],R3[1]);
+	      R3[2] = mul_add(Di0[2],Di0[2],R3[2]);
+	      R3[3] = mul_add(Di0[3],Di0[3],R3[3]);
+	      R3[0] = mul_add(Di1[0],Di1[0],R3[0]);
+	      R3[1] = mul_add(Di1[1],Di1[1],R3[1]);
+	      R3[2] = mul_add(Di1[2],Di1[2],R3[2]);
+	      R3[3] = mul_add(Di1[3],Di1[3],R3[3]);
+	      R3[0] = mul_add(Di2[0],Di2[0],R3[0]);
+	      R3[1] = mul_add(Di2[1],Di2[1],R3[1]);
+	      R3[2] = mul_add(Di2[2],Di2[2],R3[2]);
+	      R3[3] = mul_add(Di2[3],Di2[3],R3[3]);
+	      M[0] = sqrt(R3[0]);
+	      M[1] = sqrt(R3[1]);
+	      M[2] = sqrt(R3[2]);
+	      M[3] = sqrt(R3[3]);
+	      R3[0] *= M[0];
+	      R3[1] *= M[1];
+	      R3[2] *= M[2];
+	      R3[3] *= M[3];
+	      
+	      // update acceleration
+	      M[0] = VecWd(mj[0]);
+	      M[1] = VecWd(mj[1]);
+	      M[2] = VecWd(mj[2]);
+	      M[3] = VecWd(mj[3]);
+	      mj[0] = G*m[j+4]; // prefetch
+	      mj[0] = G*m[j+5]; // prefetch
+	      mj[0] = G*m[j+6]; // prefetch
+	      mj[0] = G*m[j+7]; // prefetch
+	      M[0] /= R3[0];
+	      M[1] /= R3[1];
+	      M[2] /= R3[2];
+	      M[3] /= R3[3];
+	      Ai0 = mul_add(Di0[0],M[0],Ai0);
+	      Ai1 = mul_add(Di1[0],M[0],Ai1);
+	      Ai2 = mul_add(Di2[0],M[0],Ai2);
+	      Ai0 = mul_add(Di0[1],M[1],Ai0);
+	      Ai1 = mul_add(Di1[1],M[1],Ai1);
+	      Ai2 = mul_add(Di2[1],M[1],Ai2);
+	      Ai0 = mul_add(Di0[2],M[2],Ai0);
+	      Ai1 = mul_add(Di1[2],M[2],Ai1);
+	      Ai2 = mul_add(Di2[2],M[2],Ai2);
+	      Ai0 = mul_add(Di0[3],M[3],Ai0);
+	      Ai1 = mul_add(Di1[3],M[3],Ai1);
+	      Ai2 = mul_add(Di2[3],M[3],Ai2);
+	    }
+
+	  // last interaction
+	  {
+	    // now we compute the interaction of W masses with the mass j
+	    // distance vectors
+	    Di0[0] = VecWd(xj0[0]); // hope that these are loaded now
+	    Di0[1] = VecWd(xj0[1]); // hope that these are loaded now
+	    Di0[2] = VecWd(xj0[2]); // hope that these are loaded now
+	    Di0[3] = VecWd(xj0[3]); // hope that these are loaded now
+	    Di1[0] = VecWd(xj1[0]);
+	    Di1[1] = VecWd(xj1[1]);
+	    Di1[2] = VecWd(xj1[2]);
+	    Di1[3] = VecWd(xj1[3]);
+	    Di2[0] = VecWd(xj2[0]);
+	    Di2[1] = VecWd(xj2[1]);
+	    Di2[2] = VecWd(xj2[2]);
+	    Di2[3] = VecWd(xj2[3]);
+
+	    Di0[0] -= Xi0;
+	    Di0[1] -= Xi0;
+	    Di0[2] -= Xi0;
+	    Di0[3] -= Xi0;
+	    Di1[0] -= Xi1;
+	    Di1[1] -= Xi1;
+	    Di1[2] -= Xi1;
+	    Di1[3] -= Xi1;
+	    Di2[0] -= Xi2;
+	    Di2[1] -= Xi2;
+	    Di2[2] -= Xi2;
+	    Di2[3] -= Xi2;
+
+	    // compute W distances^3
+	    R3[0] = VecWd(epsilon2);
+	    R3[1] = VecWd(epsilon2);
+	    R3[2] = VecWd(epsilon2);
+	    R3[3] = VecWd(epsilon2);
+	    R3[0] = mul_add(Di0[0],Di0[0],R3[0]);
+	    R3[1] = mul_add(Di0[1],Di0[1],R3[1]);
+	    R3[2] = mul_add(Di0[2],Di0[2],R3[2]);
+	    R3[3] = mul_add(Di0[3],Di0[3],R3[3]);
+	    R3[0] = mul_add(Di1[0],Di1[0],R3[0]);
+	    R3[1] = mul_add(Di1[1],Di1[1],R3[1]);
+	    R3[2] = mul_add(Di1[2],Di1[2],R3[2]);
+	    R3[3] = mul_add(Di1[3],Di1[3],R3[3]);
+	    R3[0] = mul_add(Di2[0],Di2[0],R3[0]);
+	    R3[1] = mul_add(Di2[1],Di2[1],R3[1]);
+	    R3[2] = mul_add(Di2[2],Di2[2],R3[2]);
+	    R3[3] = mul_add(Di2[3],Di2[3],R3[3]);
+	    M[0] = sqrt(R3[0]);
+	    M[1] = sqrt(R3[1]);
+	    M[2] = sqrt(R3[2]);
+	    M[3] = sqrt(R3[3]);
+	    R3[0] *= M[0];
+	    R3[1] *= M[1];
+	    R3[2] *= M[2];
+	    R3[3] *= M[3];
+	      
+	    // update acceleration
+	    M[0] = VecWd(mj[0]);
+	    M[1] = VecWd(mj[1]);
+	    M[2] = VecWd(mj[2]);
+	    M[3] = VecWd(mj[3]);
+	    M[0] /= R3[0];
+	    M[1] /= R3[1];
+	    M[2] /= R3[2];
+	    M[3] /= R3[3];
+	    Ai0 = mul_add(Di0[0],M[0],Ai0);
+	    Ai1 = mul_add(Di1[0],M[0],Ai1);
+	    Ai2 = mul_add(Di2[0],M[0],Ai2);
+	    Ai0 = mul_add(Di0[1],M[1],Ai0);
+	    Ai1 = mul_add(Di1[1],M[1],Ai1);
+	    Ai2 = mul_add(Di2[1],M[1],Ai2);
+	    Ai0 = mul_add(Di0[2],M[2],Ai0);
+	    Ai1 = mul_add(Di1[2],M[2],Ai1);
+	    Ai2 = mul_add(Di2[2],M[2],Ai2);
+	    Ai0 = mul_add(Di0[3],M[3],Ai0);
+	    Ai1 = mul_add(Di1[3],M[3],Ai1);
+	    Ai2 = mul_add(Di2[3],M[3],Ai2);
+	  }
+
+	  // write back accelerations
+	  Ai0.store(&a[i]);
+	  Ai1.store(&a[n+i]);
+	  Ai2.store(&a[2*n+i]);
+	}
+}
+#endif
+
 /** \brief do one time step with leapfrog
  *
  * does n*(n-1)*13 + 12n flops
