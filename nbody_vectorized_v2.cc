@@ -315,14 +315,16 @@ void acceleration_blocked_vectorized_interleaved (int n, double* __restrict__ x,
 		// distance vectors
 		Di0[0] = VecWd(xj0[0]); // hope that these are loaded now
 		Di0[1] = VecWd(xj0[1]); // hope that these are loaded now
-		Di1[0] = VecWd(xj1[0]);
-		Di1[1] = VecWd(xj1[1]);
-		Di2[0] = VecWd(xj2[0]);
-		Di2[1] = VecWd(xj2[1]);
 		xj0[0] = x[j+2]; // prefetch
 		xj0[1] = x[j+3]; // prefetch
+
+		Di1[0] = VecWd(xj1[0]);
+		Di1[1] = VecWd(xj1[1]);
 		xj1[0] = x[n+j+2];
 		xj1[1] = x[n+j+3];
+
+		Di2[0] = VecWd(xj2[0]);
+		Di2[1] = VecWd(xj2[1]);
 		xj2[0] = x[2*n+j+2];
 		xj2[1] = x[2*n+j+3];
 
@@ -349,9 +351,10 @@ void acceleration_blocked_vectorized_interleaved (int n, double* __restrict__ x,
 	      
 		// update acceleration
 		M[0] = VecWd(mj[0]);
-		M[1] = VecWd(mj[1]);
 		mj[0] = G*m[j+2]; // prefetch
+		M[1] = VecWd(mj[1]);
 		mj[1] = G*m[j+3]; // prefetch
+
 		M[0] /= R3[0];
 		M[1] /= R3[1];
 		Ai0 = mul_add(Di0[0],M[0],Ai0);
@@ -664,8 +667,8 @@ void leapfrog (int n, double dt, double* __restrict__ x, double* __restrict__ v,
   //acceleration(n,x,m,a);
   // acceleration_blocked(n,x,m,a);
   // acceleration_blocked_full(n,x,m,a);
-  acceleration_blocked_vectorized<2>(n,x,m,a);
-  //acceleration_blocked_vectorized_interleaved<4>(n,x,m,a);
+  //acceleration_blocked_vectorized<2>(n,x,m,a);
+  acceleration_blocked_vectorized_interleaved<4>(n,x,m,a);
   //acceleration_blocked_vectorized_512(n,x,m,a);
 
   // update velocity: 6n flops
