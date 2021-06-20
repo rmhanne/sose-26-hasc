@@ -157,6 +157,123 @@ void acceleration_blocked_vectorized (int n, double* __restrict__ x, double* __r
     // 16 registers!
     VecWd Xi0,Xi1,Xi2;
     VecWd Ai0,Ai1,Ai2;
+    VecWd Di0,Di1,Di2;
+    VecWd M,R3;
+    
+    double xj0;
+    double xj1;
+    double xj2;
+    double mj;
+
+    // make private acceleration vector to accumulate to
+    std::vector<double> a(3*n,0.0);
+    
+#pragma omp for
+    for (int I=0; I<n; I+=B)
+      for (int J=0; J<n; J+=B)
+	for (int i=I; i<I+B; i+=W)
+	  {
+	    // load data of mass i
+	    Xi0.load(&x[i]);
+	    Xi1.load(&x[n+i]);
+	    Xi2.load(&x[2*n+i]);
+	    Ai0.load(&a[i]);
+	    Ai1.load(&a[n+i]);
+	    Ai2.load(&a[2*n+i]);
+	  
+	    // prefetching of scalar(!) quantities
+	    xj0 = x[J];
+	    xj1 = x[n+J];
+	    xj2 = x[2*n+J];
+	    mj = G*m[J];
+
+	    // loop over masses j
+	    for (int j=J; j<J+B-1; j+=1)
+	      {
+		// now we compute the interaction of W masses with the mass j
+		// distance vectors
+		Di0 = VecWd(xj0); // hope that these are loaded now
+		Di1 = VecWd(xj1);
+		Di2 = VecWd(xj2);
+		xj0 = x[j+1]; // prefetch
+		xj1 = x[n+j+1];
+		xj2 = x[2*n+j+1];
+
+		Di0 -= Xi0;
+		Di1 -= Xi1;
+		Di2 -= Xi2;
+
+		// compute W distances^3
+		R3 = VecWd(epsilon2);
+		R3 = mul_add(Di0,Di0,R3);
+		R3 = mul_add(Di1,Di1,R3);
+		R3 = mul_add(Di2,Di2,R3);
+		M = sqrt(R3);
+		R3 *= M;
+	      
+		// update acceleration
+		M = VecWd(mj);
+		mj = G*m[j+1]; // prefetch
+		M /= R3;
+		Ai0 = mul_add(Di0,M,Ai0);
+		Ai1 = mul_add(Di1,M,Ai1);
+		Ai2 = mul_add(Di2,M,Ai2);
+	      }
+
+	    // last interaction
+	    {
+	      // now we compute the interaction of W masses with the mass j
+	      // distance vectors
+	      Di0 = VecWd(xj0); // hope that these are loaded now
+	      Di1 = VecWd(xj1);
+	      Di2 = VecWd(xj2);
+	      
+	      Di0 -= Xi0;
+	      Di1 -= Xi1;
+	      Di2 -= Xi2;
+	      
+	      // compute W distances^3
+	      R3 = VecWd(epsilon2);
+	      R3 = mul_add(Di0,Di0,R3);
+	      R3 = mul_add(Di1,Di1,R3);
+	      R3 = mul_add(Di2,Di2,R3);
+	      M = sqrt(R3);
+	      R3 *= M;
+	      
+	      // update acceleration
+	      M = VecWd(mj);
+	      M /= R3;
+	      Ai0 = mul_add(Di0,M,Ai0);
+	      Ai1 = mul_add(Di1,M,Ai1);
+	      Ai2 = mul_add(Di2,M,Ai2);
+	    }
+
+	    // write back accelerations
+	    Ai0.store(&a[i]);
+	    Ai1.store(&a[n+i]);
+	    Ai2.store(&a[2*n+i]);
+	  }
+
+    // now we need to reduce the private accelerations
+#pragma omp critical
+    {
+      for (int i=0; i<3*n; i++)
+	aglobal[i] += a[i];
+    }
+  } // end parallel regions  
+}
+
+template<size_t simd_width>
+void acceleration_blocked_vectorized_interleaved (int n, double* __restrict__ x, double* __restrict__ m, double* __restrict__ aglobal)
+{
+  const size_t W=simd_width; // SIMD width
+  using VecWd = typename SIMDSelector<simd_width>::SIMDType; // SIMD type
+
+#pragma omp parallel shared(aglobal), firstprivate(n,x,m)
+  {
+    // 16 registers!
+    VecWd Xi0,Xi1,Xi2;
+    VecWd Ai0,Ai1,Ai2;
     VecWd Di0[2],Di1[2],Di2[2];
     VecWd M[2],R3[2];
     
@@ -203,11 +320,11 @@ void acceleration_blocked_vectorized (int n, double* __restrict__ x, double* __r
 		Di2[0] = VecWd(xj2[0]);
 		Di2[1] = VecWd(xj2[1]);
 		xj0[0] = x[j+2]; // prefetch
-		xj0[0] = x[j+3]; // prefetch
+		xj0[1] = x[j+3]; // prefetch
 		xj1[0] = x[n+j+2];
-		xj1[0] = x[n+j+3];
+		xj1[1] = x[n+j+3];
 		xj2[0] = x[2*n+j+2];
-		xj2[0] = x[2*n+j+3];
+		xj2[1] = x[2*n+j+3];
 
 		Di0[0] -= Xi0;
 		Di0[1] -= Xi0;
@@ -377,17 +494,17 @@ void acceleration_blocked_vectorized_512 (int n, double* __restrict__ x, double*
 		Di2[2] = VecWd(xj2[2]);
 		Di2[3] = VecWd(xj2[3]);
 		xj0[0] = x[j+4]; // prefetch
-		xj0[0] = x[j+5]; // prefetch
-		xj0[0] = x[j+6]; // prefetch
-		xj0[0] = x[j+7]; // prefetch
+		xj0[1] = x[j+5]; // prefetch
+		xj0[2] = x[j+6]; // prefetch
+		xj0[3] = x[j+7]; // prefetch
 		xj1[0] = x[n+j+4];
-		xj1[0] = x[n+j+5];
-		xj1[0] = x[n+j+6];
-		xj1[0] = x[n+j+7];
+		xj1[1] = x[n+j+5];
+		xj1[2] = x[n+j+6];
+		xj1[3] = x[n+j+7];
 		xj2[0] = x[2*n+j+4];
-		xj2[0] = x[2*n+j+5];
-		xj2[0] = x[2*n+j+6];
-		xj2[0] = x[2*n+j+7];
+		xj2[1] = x[2*n+j+5];
+		xj2[2] = x[2*n+j+6];
+		xj2[3] = x[2*n+j+7];
 
 		Di0[0] -= Xi0;
 		Di0[1] -= Xi0;
@@ -569,7 +686,8 @@ void leapfrog (int n, double dt, double* __restrict__ x, double* __restrict__ v,
   //acceleration(n,x,m,a);
   // acceleration_blocked(n,x,m,a);
   // acceleration_blocked_full(n,x,m,a);
-  acceleration_blocked_vectorized<4>(n,x,m,a);
+  //acceleration_blocked_vectorized<4>(n,x,m,a);
+  acceleration_blocked_vectorized_interleaved<4>(n,x,m,a);
 
   // update velocity: 6n flops
   for (int i=0; i<3*n; i++)
