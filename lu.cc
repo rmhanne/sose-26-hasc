@@ -295,6 +295,7 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
   using VecWd = typename SIMDSelector<W>::SIMDType;
   VecWd Sk,Si;
   VecWd Lik,Uij,Akj;
+  std::size_t swaps=0;
 
   for (std::size_t K=0; K<n; K+=M)
     {
@@ -311,6 +312,8 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
 		pivotrow = i;
 	      }
 	  if (pivotrow!=k)
+            {
+              swaps++;
 	    for (std::size_t j=0; j<n; j+=W) // whole row!
 	      {
 		// use SIMD for swap
@@ -319,6 +322,7 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
 		Sk.store(&A[INDEX(pivotrow,j,n)]);
 		Si.store(&A[INDEX(k,j,n)]);
 	      }
+	    }
 	  // elimination
 	  for (std::size_t i=k+1; i<K+M; ++i)
 	    {
@@ -355,11 +359,12 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
 	    }
       
       // 3) update S
-#pragma omp parallel for schedule (static) firstprivate(n,A) collapse (2)
+#pragma omp parallel for schedule (static) firstprivate(n,A)
       for (std::size_t I=K+M; I<n; I+=M)
         for (std::size_t J=K+M; J<n; J+=M)
           matmul_kernel<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
     }
+  // std::cout << swaps << " swaps performed" << std::endl;
 }
 
 // package an experiment as a functor
@@ -507,7 +512,7 @@ int main (int argc, char** argv)
   
   // measure
   std::cout << "N, perf" << std::endl;
-  while (n<8000)
+  while (n<16000)
     {
       double *A = new (std::align_val_t(64)) double[n*n];
       setupA(integrateK,alpha,beta,n,A);
