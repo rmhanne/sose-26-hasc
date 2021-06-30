@@ -293,8 +293,6 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
   if (M%4!=0) exit(1);
   if (M%(3*W)!=0) exit(1);
   using VecWd = typename SIMDSelector<W>::SIMDType;
-  VecWd Sk,Si;
-  VecWd Lik,Uij,Akj;
   std::size_t swaps=0;
 
   for (std::size_t K=0; K<n; K+=M)
@@ -314,14 +312,15 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
 	  if (pivotrow!=k)
             {
               swaps++;
-	    for (std::size_t j=0; j<n; j+=W) // whole row!
-	      {
-		// use SIMD for swap
-		Sk.load(&A[INDEX(k,j,n)]);
-		Si.load(&A[INDEX(pivotrow,j,n)]);
-		Sk.store(&A[INDEX(pivotrow,j,n)]);
-		Si.store(&A[INDEX(k,j,n)]);
-	      }
+	      VecWd Sk,Si;
+	      for (std::size_t j=0; j<n; j+=W) // whole row!
+		{
+		  // use SIMD for swap
+		  Sk.load(&A[INDEX(k,j,n)]);
+		  Si.load(&A[INDEX(pivotrow,j,n)]);
+		  Sk.store(&A[INDEX(pivotrow,j,n)]);
+		  Si.store(&A[INDEX(k,j,n)]);
+		}
 	    }
 	  // elimination
 	  for (std::size_t i=k+1; i<K+M; ++i)
@@ -348,6 +347,7 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
         for (std::size_t i=0; i<M; ++i)
           for (std::size_t k=0; k<i; ++k)
 	    {
+	      VecWd Lik,Uij,Akj;
 	      Lik = VecWd(A[INDEX(K+i,K+k,n)]);
 	      for (std::size_t j=0; j<M; j+=W)
 		{
@@ -359,10 +359,69 @@ void ludecomp_blocked_vectorized_omp_pivot (int n, double A[])
 	    }
       
       // 3) update S
-#pragma omp parallel for schedule (static) firstprivate(n,A)
-      for (std::size_t I=K+M; I<n; I+=M)
-        for (std::size_t J=K+M; J<n; J+=M)
-          matmul_kernel<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
+#pragma omp parallel
+      {
+	VecWd CC[4][3], BB[3], AA; // fits exactly 16 registers
+#pragma omp for schedule (static) firstprivate(n,A) collapse (1)
+	for (std::size_t I=K+M; I<n; I+=M)
+	  for (std::size_t J=K+M; J<n; J+=M)
+	    {
+	      //matmul_kernel<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
+	      double *a = &A[INDEX(I,K,n)];
+	      double *b = &A[INDEX(K,J,n)];
+	      double *c = &A[INDEX(I,J,n)];
+	    
+	      // C is blocked into 4x(3*W) blocks
+	      for (int s=0; s<M; s+=4) // loop over 4x3*W blocks of C within the tiles
+		for (int t=0; t<M; t+=3*W)
+		  {
+		    // C_st is a 4x3*W block in 12 SIMD registers which is loaded now
+		    for (int p=0; p<4; ++p)
+		      {
+			// load store amortized over M/8 matrix multiplications
+			CC[p][0].load(&c[INDEX(s+p,t,n)]);
+			CC[p][1].load(&c[INDEX(s+p,t+W,n)]);
+			CC[p][2].load(&c[INDEX(s+p,t+2*W,n)]);
+		      }
+		    // C_st += A_sM*B_Mt where now A_sM is 4xM and B_Mt is Mx3*W
+		    for (int u=0; u<M; u+=1) // columns of A / rows of B
+		      {
+			// 3 loads of B now amortized over ... 12 fmas
+			BB[0].load(&b[INDEX(u,t,n)]);
+			BB[1].load(&b[INDEX(u,t+W,n)]);
+			BB[2].load(&b[INDEX(u,t+2*W,n)]);
+            
+			AA = VecWd(a[INDEX(s,u,n)]); // load-broadcast
+			CC[0][0] = nmul_add(AA,BB[0],CC[0][0]);
+			CC[0][1] = nmul_add(AA,BB[1],CC[0][1]);
+			CC[0][2] = nmul_add(AA,BB[2],CC[0][2]);
+            
+			AA = VecWd(a[INDEX(s+1,u,n)]); // load-broadcast
+			CC[1][0] = nmul_add(AA,BB[0],CC[1][0]);
+			CC[1][1] = nmul_add(AA,BB[1],CC[1][1]);
+			CC[1][2] = nmul_add(AA,BB[2],CC[1][2]);
+            
+			AA = VecWd(a[INDEX(s+2,u,n)]); // load-broadcast
+			CC[2][0] = nmul_add(AA,BB[0],CC[2][0]);
+			CC[2][1] = nmul_add(AA,BB[1],CC[2][1]);
+			CC[2][2] = nmul_add(AA,BB[2],CC[2][2]);
+            
+			AA = VecWd(a[INDEX(s+3,u,n)]); // load-broadcast
+			CC[3][0] = nmul_add(AA,BB[0],CC[3][0]);
+			CC[3][1] = nmul_add(AA,BB[1],CC[3][1]);
+			CC[3][2] = nmul_add(AA,BB[2],CC[3][2]);
+		      }
+		    // write back C
+		    for (int p=0; p<4; ++p)
+		      {
+			// load store amortized over M/8 matrix multiplications
+			CC[p][0].store(&c[INDEX(s+p,t,n)]);
+			CC[p][1].store(&c[INDEX(s+p,t+W,n)]);
+			CC[p][2].store(&c[INDEX(s+p,t+2*W,n)]);
+		      }
+		  }
+	    }
+      }
     }
   // std::cout << swaps << " swaps performed" << std::endl;
 }
