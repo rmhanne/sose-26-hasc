@@ -392,6 +392,75 @@ void matmul_kernel_4x2 (int n, double A[], double B[], double C[])
       }
 }
 
+// Vectorized C += A*B, where A,B,C are MxM submatrices
+// of nxn matrices stored in row-major layout
+// SIMD with vectorization of 8x2*W blocks
+template<size_t M, size_t W>
+void matmul_kernel8x2 (int n, double A[], double B[], double C[])
+{
+  using VecWd = typename SIMDSelector<W>::SIMDType;
+  VecWd CC[8][2], BB[2], AA[8]; // fits 30 registers
+ 
+  // C is blocked into 4x(4*W) blocks
+  for (int t=0; t<M; t+=2*W)
+    for (int s=0; s<M; s+=8) // loop over 8x2*W blocks of C within the tiles
+      {
+        // C_st is a 8x2*W block
+        for (int p=0; p<8; ++p)
+          {
+            // load store amortized over M/8 matrix multiplications
+            CC[p][0].load(&C[INDEX(s+p,t,n)]);
+            CC[p][1].load(&C[INDEX(s+p,t+W,n)]);
+          }
+        // C_st += A_sM*B_Mt where now A_sM is 4xM and B_Mt is Mx2*W
+        for (int u=0; u<M; u+=1) // columns of A / rows of B
+          {
+            // loads of B now amortized over ... 8*2 fmas
+            BB[0].load(&B[INDEX(u,t,n)]);
+            BB[1].load(&B[INDEX(u,t+W,n)]);
+            
+            AA[0] = VecWd(A[INDEX(s+0,u,n)]); // load-broadcast
+            CC[0][0] = nmul_add(AA[0],BB[0],CC[0][0]);
+            CC[0][1] = nmul_add(AA[0],BB[1],CC[0][1]);
+            
+            AA[1] = VecWd(A[INDEX(s+1,u,n)]); // load-broadcast
+            CC[1][0] = nmul_add(AA[1],BB[0],CC[1][0]);
+            CC[1][1] = nmul_add(AA[1],BB[1],CC[1][1]);
+            
+            AA[2] = VecWd(A[INDEX(s+2,u,n)]); // load-broadcast
+            CC[2][0] = nmul_add(AA[2],BB[0],CC[2][0]);
+            CC[2][1] = nmul_add(AA[2],BB[1],CC[2][1]);
+            
+            AA[3] = VecWd(A[INDEX(s+3,u,n)]); // load-broadcast
+            CC[3][0] = nmul_add(AA[3],BB[0],CC[3][0]);
+            CC[3][1] = nmul_add(AA[3],BB[1],CC[3][1]);
+
+            AA[4] = VecWd(A[INDEX(s+4,u,n)]); // load-broadcast
+            CC[4][0] = nmul_add(AA[4],BB[0],CC[4][0]);
+            CC[4][1] = nmul_add(AA[4],BB[1],CC[4][1]);
+
+	    AA[5] = VecWd(A[INDEX(s+5,u,n)]); // load-broadcast
+            CC[5][0] = nmul_add(AA[5],BB[0],CC[5][0]);
+            CC[5][1] = nmul_add(AA[5],BB[1],CC[5][1]);
+	    
+	    AA[6] = VecWd(A[INDEX(s+6,u,n)]); // load-broadcast
+            CC[6][0] = nmul_add(AA[6],BB[0],CC[6][0]);
+            CC[6][1] = nmul_add(AA[6],BB[1],CC[6][1]);
+	    
+	    AA[7] = VecWd(A[INDEX(s+7,u,n)]); // load-broadcast
+            CC[7][0] = nmul_add(AA[7],BB[0],CC[7][0]);
+            CC[7][1] = nmul_add(AA[7],BB[1],CC[7][1]);
+          }
+        // write back C
+        for (int p=0; p<8; ++p)
+          {
+            // load store amortized over M/8 matrix multiplications
+            CC[p][0].store(&C[INDEX(s+p,t,n)]);
+            CC[p][1].store(&C[INDEX(s+p,t+W,n)]);
+          }
+      }
+}
+
 // initialize all entries up to N
 template<size_t W>
 void ludecomp_blocked_vectorized (int n, double A[])
@@ -661,8 +730,8 @@ template<size_t W, size_t blockM>
 void ludecomp_blocked2_vectorized_omp_avx512 (int n, double A[])
 {
   if (n%M!=0) exit(1);
-  if (M%4!=0) exit(1);
-  if (M%(5*W)!=0) exit(1);
+  if (M%8!=0) exit(1);
+  if (M%(2*W)!=0) exit(1);
   using VecWd = typename SIMDSelector<W>::SIMDType;
 
   for (std::size_t K=0; K<n; K+=M)
@@ -719,18 +788,18 @@ void ludecomp_blocked2_vectorized_omp_avx512 (int n, double A[])
 	  std::size_t JJ = K+M+superblockj*blockM*M;
 	  for (std::size_t I=II; I<II+blockM*M; I+=M)
 	    for (std::size_t J=JJ; J<JJ+blockM*M; J+=M)
-	      matmul_kernel_4x5<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
+	      matmul_kernel_8x2<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
 	}
       // tail loops
       std::size_t n_end = K+M+superblocks*blockM*M;
 #pragma omp parallel for if ((n_end-K-M)/M>4) schedule (static,1) firstprivate(n,A,n_end)
       for (std::size_t I=K+M; I<n_end; I+=M)
         for (std::size_t J=n_end; J<n; J+=M)
-          matmul_kernel_4x5<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
+          matmul_kernel_8x2<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
 #pragma omp parallel for if ((n_end-K-M)/M>4) schedule (static,1) firstprivate(n,A,n_end)
       for (std::size_t I=n_end; I<n; I+=M)
         for (std::size_t J=K+M; J<n; J+=M)
-          matmul_kernel_4x5<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
+          matmul_kernel_8x2<M,W>(n,&A[INDEX(I,K,n)],&A[INDEX(K,J,n)],&A[INDEX(I,J,n)]);
     }
 }
 
@@ -758,8 +827,8 @@ public:
     //ludecomp_blocked(n,B);
     //ludecomp_blocked_vectorized<8>(n,B);
     //ludecomp_blocked_vectorized_omp<4>(n,B);
-    ludecomp_blocked2_vectorized_omp<8,4>(n,B);
-    //ludecomp_blocked2_vectorized_omp_avx512<8,4>(n,B);
+    //ludecomp_blocked2_vectorized_omp<8,4>(n,B);
+    ludecomp_blocked2_vectorized_omp_avx512<8,4>(n,B);
     //ludecomp_blocked_vectorized_omp_pivot<4>(n,B);
   }
   // report number of operations
