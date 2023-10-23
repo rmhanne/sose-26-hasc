@@ -42,7 +42,7 @@ void f (int rank, int n)
         // notify that result is ready
         flags[rank] = 1;
         while (flags[rank]==1) // wait until result has been read
-	  flags[0] = 0; // dummy access
+	        flags[0] = 0; // dummy access
         break;
       }
 }

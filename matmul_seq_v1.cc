@@ -1,105 +1,136 @@
 #include <iostream>
 #include <vector>
-
 #include "time_experiment.hh"
 
-const int M = 64;
-const int N = 64*M;
-double A[N][N] __attribute__((aligned(32)));
-double B[N][N] __attribute__((aligned(32)));
-double C[N][N] __attribute__((aligned(32)));
+const int P = 24;       // basic block size is a multiple of 4, 8 and 12
+const int Q = 4;       // multiplier
+const int M = P * Q;   // tile size
+const int N = M * 64; // maximum problem size;
 
-// initialize
-void initialize (double A[N][N], double B[N][N], double C[N][N])
+#define INDEX(i, j, n) ((i)*n + (j)) // row major
+// #define INDEX(i, j, n) ((j)*n + (i)) // column major
+
+// initialize all entries up to N
+void initialize(int n, double A[], double B[], double C[])
 {
-  int i,j,k;
+  int i, j;
 
-  for (i=0; i<N; i++)
-    for (j=0; j<N; j++)
-      {
-        A[i][j] = (1.0*i*j)/(N*N);
-        B[i][j] = (1.0+i+j)/N;
-        C[i][j] = 0.0;
-      }
+  for (i = 0; i < n; i++)
+    for (j = 0; j < n; j++)
+    {
+      A[INDEX(i, j, n)] = (1.0 * i * j) / (n * n);
+      B[INDEX(i, j, n)] = (1.0 + i + j) / n;
+      C[INDEX(i, j, n)] = 0.0;
+    }
 }
 
-// naive matmul C = A*B + C
-void matmul1 (int n, double A[N][N], double B[N][N], double C[N][N])
+// norm of difference of two matrices
+double compare(int n, const double A1[], const double A2[])
 {
-  int i,j,k;
+  int i, j;
+  double sum = 0.0;
 
-  for (i=0; i<n; i++)
-    for (j=0; j<n; j++)
-      for (k=0; k<n; k++)
-        C[i][j] += A[i][k]*B[k][j];
+  for (i = 0; i < n; i++)
+    for (j = 0; j < n; j++)
+      sum += std::abs(A1[INDEX(i, j, n)] - A2[INDEX(i, j, n)]);
+  return sum;
 }
 
-// same with tiling  C = A*B + C
-void matmul2 (int n, double A[N][N], double B[N][N], double C[N][N])
+void matmul0(int n, const double A[], const double B[], double C[])
 {
-  int i,j,k,s,t,u;
-  
-  for (i=0; i<n; i+=M)
-    for (j=0; j<n; j+=M)
-      for (k=0; k<n; k+=M)
-        for (s=i; s<i+M; s++)
-	  for (t=j; t<j+M; t++)
-	    for (u=k; u<k+M; u++)
-              C[s][t] += A[s][u]*B[u][t]; 
+  for (int i = 0; i < n; i++)
+    for (int j = 0; j < n; j++)
+      for (int k = 0; k < n; k++)
+        C[INDEX(i, j, n)] += A[INDEX(i, k, n)] * B[INDEX(k, j, n)];
 }
+
+void matmul1(int n, const double A[], const double B[], double C[])
+{
+  for (int i = 0; i < n; i += M)
+    for (int j = 0; j < n; j += M)
+      for (int k = 0; k < n; k += M)
+        for (int s = i; s < i + M; s += 1)
+          for (int u = k; u < k + M; u += 1)
+            for (int t = j; t < j + M; t += 1)
+              C[INDEX(s, t, n)] += A[INDEX(s, u, n)] * B[INDEX(u, t, n)];
+}
+
+// package an experiment as a functor
+class Experiment0
+{
+  int n;
+  double *A, *B, *C;
+
+public:
+  // construct an experiment
+  Experiment0(int n_) : n(n_)
+  {
+    A = new (std::align_val_t(64)) double[n * n];
+    B = new (std::align_val_t(64)) double[n * n];
+    C = new (std::align_val_t(64)) double[n * n];
+    initialize(n, A, B, C);
+  }
+  ~Experiment0()
+  {
+    delete[] C;
+    delete[] B;
+    delete[] A;
+  }
+  // run an experiment; can be called several times
+  void run() const { matmul0(n, A, B, C); }
+  // report number of operations
+  double operations() const
+  {
+    return 2.0 * n * n * n;
+  }
+};
 
 // package an experiment as a functor
 class Experiment1
 {
   int n;
+  double *A, *B, *C;
+
 public:
   // construct an experiment
-  Experiment1 (int n_) : n(n_) {initialize(A,B,C);}
-  // run an experiment; can be called several times
-  void run () const
+  Experiment1(int n_) : n(n_)
   {
-    matmul1(n,A,B,C);
+    A = new (std::align_val_t(64)) double[n * n];
+    B = new (std::align_val_t(64)) double[n * n];
+    C = new (std::align_val_t(64)) double[n * n];
+    initialize(n, A, B, C);
   }
-  // report number of operations
-  double operations () const
+  ~Experiment1()
   {
-    return 2.0*n*n*n;
+    delete[] C;
+    delete[] B;
+    delete[] A;
+  }
+  // run an experiment; can be called several times
+  void run() const { matmul1(n, A, B, C); }
+  // report number of operations
+  double operations() const
+  {
+    return 2.0 * n * n * n;
   }
 };
 
-// package an experiment as a functor
-class Experiment2
+int main(int argc, char **argv)
 {
-  int n;
-public:
-  // construct an experiment
-  Experiment2 (int n_) : n(n_) {initialize(A,B,C);}
-  // run an experiment; can be called several times
-  void run () const
-  {
-    matmul2(n,A,B,C);
-  }
-  // report number of operations
-  double operations () const
-  {
-    return 2.0*n*n*n;
-  }
-};
+  std::cout << "memory for 3 matrices in GByte: " << 3.0 * N * N * 8 / 1024 / 1024 / 1024 << std::endl;
 
-int main (int argc, char** argv)
-{
   std::vector<int> sizes;
-  for (int i=M; i<=5000; i*=2) sizes.push_back(i);
-  std::cout << "N, vanillaautovec, tiledautovec" << std::endl;
+  for (int i = M; i <= N; i *= 2)
+    sizes.push_back(i);
+  std::cout << "N=" << N << " M=" << M << std::endl;
   for (auto i : sizes)
-    { 
-      Experiment1 e1(i);
-      Experiment2 e2(i);
-      auto d2 = time_experiment(e2);
-      auto d1 = time_experiment(e1);
-      double flops1 = d1.first*e1.operations()/d1.second*1e6/1e9;
-      double flops2 = d2.first*e2.operations()/d2.second*1e6/1e9;
-      std::cout << i << ", " << flops1 << ", " << flops2 << std::endl;
-    }
+  {
+    Experiment0 e(i);
+    auto d = time_experiment(e, 500000);
+    double flops = d.first * e.operations() / d.second * 1e6 / 1e9;
+    std::cout << i
+              << ", " << flops
+              << std::endl;
+  }
   return 0;
 }
