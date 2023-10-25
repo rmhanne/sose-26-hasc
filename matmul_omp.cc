@@ -12,25 +12,21 @@
 const int P = 24;   // basic block size is a multiple of 4, 8 and 12
 const int Q = 4;    // multiplier
 const int M = P*Q;  // tile size
-const int N = M*128;// maximum problem size; 
-// double A1[N][N] __attribute__((aligned(64))); // input matrix 1
-// double B1[N][N] __attribute__((aligned(64))); // input matrix 2
-// double C1[N][N] __attribute__((aligned(64))); // output matrix 1
-// double C0[N][N] __attribute__((aligned(64))); // output matrix 2
+const int N = M*64;// maximum problem size; 
 
 #define INDEX(i,j,n) ((i)*n+(j))
 
 // initialize all entries up to N
-void initialize (double A[], double B[], double C[])
+void initialize (int n, double A[], double B[], double C[])
 {
   int i,j;
 
-  for (i=0; i<N; i++)
-    for (j=0; j<N; j++)
+  for (i=0; i<n; i++)
+    for (j=0; j<n; j++)
       {
-        A[INDEX(i,j,N)] = (1.0*i*j)/(N*N);
-        B[INDEX(i,j,N)] = (1.0+i+j)/N;
-        C[INDEX(i,j,N)] = 0.0;
+        A[INDEX(i,j,n)] = (1.0*i*j)/(n*n);
+        B[INDEX(i,j,n)] = (1.0+i+j)/n;
+        C[INDEX(i,j,n)] = 0.0;
       }
 }
 
@@ -47,9 +43,9 @@ double compare (int n, double A1[], double A2[])
 }
 
 // naive matmul C = A*B + C; this gives the right result for comparison
-void matmul0 (int n, double A[], double B[], double C[])
+void matmul0 (int n, const double A[], const double B[], double C[])
 {
-#pragma omp parallel for schedule (static,16) collapse (2) firstprivate (n,A,B,C)
+#pragma omp parallel for schedule (static) collapse (2) firstprivate (n,A,B,C)
   for (int i=0; i<n; i++)
     for (int j=0; j<n; j++)
       for (int k=0; k<n; k++)
@@ -57,21 +53,21 @@ void matmul0 (int n, double A[], double B[], double C[])
 }
 
 // naive matmul C = A*B + C; this gives the right result for comparison
-void matmul1 (int n, double A[], double B[], double C[])
+void matmul1 (int n, const double A[], const double B[], double C[])
 {
 #pragma omp parallel for schedule (static) collapse (2) firstprivate (n,A,B,C)
   for (int i=0; i<n; i+=M)
     for (int j=0; j<n; j+=M)
       for (int k=0; k<n; k+=M)
         for (int s=i; s<i+M; s+=1)
-          for (int t=j; t<j+M; t+=1)
+	  for (int u=k; u<k+M; u+=1)
 #pragma omp simd simdlen(4)
-	    for (int u=k; u<k+M; u+=1)
+            for (int t=j; t<j+M; t+=1)
 	      C[INDEX(s,t,n)] += A[INDEX(s,u,n)]*B[INDEX(u,t,n)];
 }
 
 // tiling and SIMD with vectorization of 4x12 blocks
-void matmul4 (int n, double A[], double B[], double C[])
+void matmul4 (int n, const double A[], const double B[], double C[])
 {
   Vec4d CC[4][3], BB[3], AA; // fits exactly 16 registers
   
@@ -137,6 +133,7 @@ public:
     A = new (std::align_val_t(64)) double[n*n];
     B = new (std::align_val_t(64)) double[n*n];
     C = new (std::align_val_t(64)) double[n*n];
+    initialize(n,A,B,C);
   }
   ~Experiment4 ()
   {
@@ -145,7 +142,7 @@ public:
     delete[] A;
   }
   // run an experiment; can be called several times
-  void run () const {matmul4(n,A,B,C);}
+  void run () const {matmul0(n,A,B,C);}
   // report number of operations
   double operations () const
   {return 2.0*n*n*n;}
