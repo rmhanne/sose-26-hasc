@@ -30,7 +30,7 @@ auto time_experiment(const T &experiment, int mintime = 250000)
   while (dcast < mintime && rep < 1000000000)
   {
     start = std::chrono::high_resolution_clock::now();
-    for (long i = 0; i < rep; i++)
+    for (long k = 0; k < rep; k++)
       experiment.run();
     stop = std::chrono::high_resolution_clock::now();
     duration = stop - start;
