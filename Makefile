@@ -12,8 +12,8 @@ DPCPP = dpcpp
 #CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 # AVX2 with vector class library
 CCFLAGSBASE2 = -std=c++17 -O3 
-CCFLAGSBASE3 = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
-CCFLAGSBASE = -std=c++17 -O1 -funroll-loops -fargument-noalias
+CCFLAGSBASE = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
+CCFLAGSBASE3 = -std=c++17 -O1 -funroll-loops -fargument-noalias
 ARMFLAGS = -ftree-vectorize -march=armv8-a+dotprod -fopt-info-vec
 SSE2FLAGS = -ftree-vectorize -msse2 -fopt-info-vec
 AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
@@ -50,6 +50,7 @@ all: scalar_product_v1\
      matmul_omp_milan\
      pointer_chasing\
      transpose_v1\
+     transpose_M2\
      matvec_v1 \
      matvec_v2 \
      peterson\
@@ -96,6 +97,8 @@ scalar_product_ms: scalar_product_ms.cc Makefile MessageSystem.hh Barrier.hh
 matmul_seq_v1: matmul_seq_v1.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_M2: matmul_M2.cc Makefile
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+transpose_M2: transpose_M2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_seq_v2: matmul_seq_v2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)

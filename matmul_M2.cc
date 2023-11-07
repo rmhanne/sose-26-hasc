@@ -5,12 +5,12 @@
 // for ARM intrinsics
 #include <arm_neon.h>
 
-const int P = 24;       // basic block size is a multiple of 4, 8 and 12
-const int Q = 4;       // multiplier
-const int M = P * Q;   // tile size
+const int P = 24;     // basic block size is a multiple of 4, 8 and 12
+const int Q = 4;      // multiplier
+const int M = P * Q;  // tile size
 const int N = M * 64; // maximum problem size;
 
-#define INDEX(i, j, n) ((i)*n + (j)) // row major
+#define INDEX(i, j, n) ((i)*n + (j)) // row major mapping
 // #define INDEX(i, j, n) ((j)*n + (i)) // column major
 
 // initialize all entries up to N
@@ -42,8 +42,8 @@ double compare(int n, const double A1[], const double A2[])
 void matmul0(int n, const double A[], const double B[], double C[])
 {
   for (int i = 0; i < n; i++)
-    for (int j = 0; j < n; j++)
-      for (int k = 0; k < n; k++)
+    for (int k = 0; k < n; k++)
+      for (int j = 0; j < n; j++)
         C[INDEX(i, j, n)] += A[INDEX(i, k, n)] * B[INDEX(k, j, n)];
 }
 
@@ -67,48 +67,64 @@ void matmul2(int n, const double A[], const double B[], double C[])
     for (int j = 0; j < n; j += M)
       for (int k = 0; k < n; k += M)
         // multiplication of two block matrices C_ij = A_ik*B_kj
-        for (int s = i; s < i + M; s += 4) // process four rows together
+        for (int s = i; s < i + M; s += 4)   // process four rows together
           for (int t = j; t < j + M; t += 6) // process 3*2=6 columns together
           {
             // update a block of 4x6 elements of C_ij
-            CC[0][0] = vld1q_f64(&C[INDEX(s,   t, n)]);  CC[0][1] = vld1q_f64(&C[INDEX(s,   t+2, n)]);  CC[0][2] = vld1q_f64(&C[INDEX(s,   t+4, n)]);
-            CC[1][0] = vld1q_f64(&C[INDEX(s+1, t, n)]);  CC[1][1] = vld1q_f64(&C[INDEX(s+1, t+2, n)]);  CC[1][2] = vld1q_f64(&C[INDEX(s+1, t+4, n)]);
-            CC[2][0] = vld1q_f64(&C[INDEX(s+2, t, n)]);  CC[2][1] = vld1q_f64(&C[INDEX(s+2, t+2, n)]);  CC[2][2] = vld1q_f64(&C[INDEX(s+2, t+4, n)]);
-            CC[3][0] = vld1q_f64(&C[INDEX(s+3, t, n)]);  CC[3][1] = vld1q_f64(&C[INDEX(s+3, t+2, n)]);  CC[3][2] = vld1q_f64(&C[INDEX(s+3, t+4, n)]);
+            CC[0][0] = vld1q_f64(&C[INDEX(s, t, n)]);
+            CC[0][1] = vld1q_f64(&C[INDEX(s, t + 2, n)]);
+            CC[0][2] = vld1q_f64(&C[INDEX(s, t + 4, n)]);
+            CC[1][0] = vld1q_f64(&C[INDEX(s + 1, t, n)]);
+            CC[1][1] = vld1q_f64(&C[INDEX(s + 1, t + 2, n)]);
+            CC[1][2] = vld1q_f64(&C[INDEX(s + 1, t + 4, n)]);
+            CC[2][0] = vld1q_f64(&C[INDEX(s + 2, t, n)]);
+            CC[2][1] = vld1q_f64(&C[INDEX(s + 2, t + 2, n)]);
+            CC[2][2] = vld1q_f64(&C[INDEX(s + 2, t + 4, n)]);
+            CC[3][0] = vld1q_f64(&C[INDEX(s + 3, t, n)]);
+            CC[3][1] = vld1q_f64(&C[INDEX(s + 3, t + 2, n)]);
+            CC[3][2] = vld1q_f64(&C[INDEX(s + 3, t + 4, n)]);
 
             for (int u = k; u < k + M; u += 1) // four rows times six columns
             {
               // load elements of B
               BB[0] = vld1q_f64(&B[INDEX(u, t, n)]);
-              BB[0] = vld1q_f64(&B[INDEX(u, t+2, n)]);
-              BB[0] = vld1q_f64(&B[INDEX(u, t+4, n)]);
+              BB[0] = vld1q_f64(&B[INDEX(u, t + 2, n)]);
+              BB[0] = vld1q_f64(&B[INDEX(u, t + 4, n)]);
 
               AA = vmovq_n_f64(A[INDEX(s, u, n)]); // load-broadcast
-              CC[0][0] = vfmaq_f64(CC[0][0],AA,BB[0]);
-              CC[0][1] = vfmaq_f64(CC[0][1],AA,BB[1]);
-              CC[0][2] = vfmaq_f64(CC[0][2],AA,BB[2]);
+              CC[0][0] = vfmaq_f64(CC[0][0], AA, BB[0]);
+              CC[0][1] = vfmaq_f64(CC[0][1], AA, BB[1]);
+              CC[0][2] = vfmaq_f64(CC[0][2], AA, BB[2]);
 
-              AA = vmovq_n_f64(A[INDEX(s+1, u, n)]); // load-broadcast
-              CC[1][0] = vfmaq_f64(CC[1][0],AA,BB[0]);
-              CC[1][1] = vfmaq_f64(CC[1][1],AA,BB[1]);
-              CC[1][2] = vfmaq_f64(CC[1][2],AA,BB[2]);
+              AA = vmovq_n_f64(A[INDEX(s + 1, u, n)]); // load-broadcast
+              CC[1][0] = vfmaq_f64(CC[1][0], AA, BB[0]);
+              CC[1][1] = vfmaq_f64(CC[1][1], AA, BB[1]);
+              CC[1][2] = vfmaq_f64(CC[1][2], AA, BB[2]);
 
-              AA = vmovq_n_f64(A[INDEX(s+2, u, n)]); // load-broadcast
-              CC[2][0] = vfmaq_f64(CC[2][0],AA,BB[0]);
-              CC[2][1] = vfmaq_f64(CC[2][1],AA,BB[1]);
-              CC[2][2] = vfmaq_f64(CC[2][2],AA,BB[2]);
+              AA = vmovq_n_f64(A[INDEX(s + 2, u, n)]); // load-broadcast
+              CC[2][0] = vfmaq_f64(CC[2][0], AA, BB[0]);
+              CC[2][1] = vfmaq_f64(CC[2][1], AA, BB[1]);
+              CC[2][2] = vfmaq_f64(CC[2][2], AA, BB[2]);
 
-              AA = vmovq_n_f64(A[INDEX(s+3, u, n)]); // load-broadcast
-              CC[3][0] = vfmaq_f64(CC[3][0],AA,BB[0]);
-              CC[3][1] = vfmaq_f64(CC[3][1],AA,BB[1]);
-              CC[3][2] = vfmaq_f64(CC[3][2],AA,BB[2]);
+              AA = vmovq_n_f64(A[INDEX(s + 3, u, n)]); // load-broadcast
+              CC[3][0] = vfmaq_f64(CC[3][0], AA, BB[0]);
+              CC[3][1] = vfmaq_f64(CC[3][1], AA, BB[1]);
+              CC[3][2] = vfmaq_f64(CC[3][2], AA, BB[2]);
             }
 
             // write back the update block of 4x6 elements from C_ij to memory
-            vst1q_f64(&C[INDEX(s,   t, n)], CC[0][0]); vst1q_f64(&C[INDEX(s,   t+2, n)], CC[0][1]); vst1q_f64(&C[INDEX(s,   t+4, n)], CC[0][2]);
-            vst1q_f64(&C[INDEX(s+1, t, n)], CC[1][0]); vst1q_f64(&C[INDEX(s+1, t+2, n)], CC[1][1]); vst1q_f64(&C[INDEX(s+1, t+4, n)], CC[1][2]);
-            vst1q_f64(&C[INDEX(s+2, t, n)], CC[2][0]); vst1q_f64(&C[INDEX(s+2, t+2, n)], CC[2][1]); vst1q_f64(&C[INDEX(s+2, t+4, n)], CC[2][2]);
-            vst1q_f64(&C[INDEX(s+3, t, n)], CC[3][0]); vst1q_f64(&C[INDEX(s+3, t+2, n)], CC[3][1]); vst1q_f64(&C[INDEX(s+3, t+4, n)], CC[3][2]);
+            vst1q_f64(&C[INDEX(s, t, n)], CC[0][0]);
+            vst1q_f64(&C[INDEX(s, t + 2, n)], CC[0][1]);
+            vst1q_f64(&C[INDEX(s, t + 4, n)], CC[0][2]);
+            vst1q_f64(&C[INDEX(s + 1, t, n)], CC[1][0]);
+            vst1q_f64(&C[INDEX(s + 1, t + 2, n)], CC[1][1]);
+            vst1q_f64(&C[INDEX(s + 1, t + 4, n)], CC[1][2]);
+            vst1q_f64(&C[INDEX(s + 2, t, n)], CC[2][0]);
+            vst1q_f64(&C[INDEX(s + 2, t + 2, n)], CC[2][1]);
+            vst1q_f64(&C[INDEX(s + 2, t + 4, n)], CC[2][2]);
+            vst1q_f64(&C[INDEX(s + 3, t, n)], CC[3][0]);
+            vst1q_f64(&C[INDEX(s + 3, t + 2, n)], CC[3][1]);
+            vst1q_f64(&C[INDEX(s + 3, t + 4, n)], CC[3][2]);
           }
 }
 
