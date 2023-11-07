@@ -59,7 +59,7 @@ void transposeb4(int n, double *A, double *B)
     }
 }
 
-// vectorized transpose with 4x4 blocks and consecutive write
+// vectorized transpose with 4x4 blocks and consecutive write & TLB blocking
 void transposeb4_x(int n, double *A, double *B)
 {
   float64x2_t A00, A01, A10, A11, A20, A21, A30, A31;
