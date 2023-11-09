@@ -61,6 +61,7 @@ all: scalar_product_v1\
      producer_consumer\
      nbody_vanilla\
      nbody_vectorized\
+     nbody_M2\
      nbody_vectorized_v2\
      nbody_mpi\
      nbody_mpi_nonblocking\
@@ -119,9 +120,11 @@ matvec_v1: matvec_v1.cc Makefile
 matvec_v2: matvec_v2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_vanilla: nbody_vanilla.cc Makefile nbody_generate.hh nbody_io.hh
-	$(CC) $(CCFLAGS_BASE) -o $@ $< $(LFLAGS)
+	$(CC) $(CCFLAGSBASE) -o $@ $< $(LFLAGS)
 nbody_vectorized: nbody_vectorized.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+nbody_M2: nbody_M2.cc Makefile
+	$(CC) $(CCFLAGSBASE) -o $@ $< $(LFLAGS)
 nbody_vectorized_v2: nbody_vectorized_v2.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) $(OMPFLAGS) -o $@ $< $(LFLAGS)
 nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.hh nbody_io.hh
