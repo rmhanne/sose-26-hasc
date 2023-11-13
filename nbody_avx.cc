@@ -49,6 +49,67 @@ void acceleration2 (int n, double3* __restrict__ x, double* __restrict__ m, doub
       }
 }
 
+/** \brief compute acceleration vector from position and masses
+ *
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ * Blocked version working on tiles of size BxB
+ */
+void acceleration_blocked(int n, double3 *__restrict__ x, double *__restrict__ m, double3 *__restrict__ a)
+{
+  for (int I = 0; I < n; I += B)
+  {
+    // block (I,I)
+    for (int i = I; i < I + B; i++)
+      for (int j = i + 1; j < I + B; j++)
+      {
+        double d0 = x[j][0] - x[i][0];
+        double d1 = x[j][1] - x[i][1];
+        double d2 = x[j][2] - x[i][2];
+        double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+        double r = sqrt(r2);
+        double invfact = G / (r * r2);
+        double factori = m[i] * invfact;
+        double factorj = m[j] * invfact;
+        a[i][0] += factorj * d0;
+        a[i][1] += factorj * d1;
+        a[i][2] += factorj * d2;
+        a[j][0] -= factori * d0;
+        a[j][1] -= factori * d1;
+        a[j][2] -= factori * d2;
+      }
+
+    // blocks J>I
+    for (int J = I + B; J < n; J += B)
+      for (int i = I; i < I + B; i += 1)
+        for (int j = J; j < J + B; j += 1)
+        {
+          double d0 = x[j][0] - x[i][0];
+          double d1 = x[j][1] - x[i][1];
+          double d2 = x[j][2] - x[i][2];
+          double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+          double r = sqrt(r2);
+          double invfact = G / (r * r2);
+          double factori = m[i] * invfact;
+          double factorj = m[j] * invfact;
+          a[i][0] += factorj * d0;
+          a[i][1] += factorj * d1;
+          a[i][2] += factorj * d2;
+          a[j][0] -= factori * d0;
+          a[j][1] -= factori * d1;
+          a[j][2] -= factori * d2;
+        }
+  }
+}
+
+/** \brief compute acceleration vector from position and masses
+ * 
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ * AVX2 version working on 2x4 masses 
+ *  - exploits symmetry
+ *  - needs transpose
+ */
 void acceleration (int n, double3* __restrict__ x, double* __restrict__ m, double3* __restrict__ a)
 {
   Vec4d A0,A1;
@@ -228,7 +289,14 @@ void acceleration (int n, double3* __restrict__ x, double* __restrict__ m, doubl
     }
 }
 
-// version 3: 1x4 interaction, column major
+/** \brief compute acceleration vector from position and masses
+ * 
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ *   - Exploits symmetry
+ *   - works on 1x4 masses at at time
+ *   - delays write back of acceleration
+ */
 void acceleration3 (int n, double3* __restrict__ x, double* __restrict__ m, double3* __restrict__ a)
 {
   Vec4d Ai; // acceleration row
@@ -271,7 +339,7 @@ void acceleration3 (int n, double3* __restrict__ x, double* __restrict__ m, doub
 	    // loop over particles in row
 	    for (int i=I; i<I+B; i+=1)
 	      {
-		// distances 2x4 masses
+		// distances 1x4 masses
 		T0.load(&x[i][0]); // position particle i
 		D0.load(&x[j][0]); // positions of all particles j...j+3
 		D1.load(&x[j+1][0]);
