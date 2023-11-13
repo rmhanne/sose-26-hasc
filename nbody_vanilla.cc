@@ -14,7 +14,7 @@
 
 // basic data type for position, velocity, acceleration
 typedef double double3[4]; // pad up for later use with SIMD
-const int B = 8;					 // block size for tiling
+const int B = 32;					 // block size for tiling
 
 /*const double gamma = 6.674E-11;*/
 const double G = 1.0;
