@@ -63,7 +63,8 @@ all: scalar_product_v1\
      nbody_vanilla\
      nbody_avx\
      nbody_neon\
-     nbody_vectorized_v2\
+     nbody_neon_v2\
+     nbody_intel_SoA\
      nbody_mpi\
      nbody_mpi_nonblocking\
      nbody_omp\
@@ -128,8 +129,12 @@ nbody_vanilla: nbody_vanilla.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGSBASE) -o $@ $< $(LFLAGS)
 nbody_vectorized: nbody_vectorized.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
+nbody_intel_SoA: nbody_intel_SoA.cc Makefile nbody_generate.hh nbody_io.hh
+	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 nbody_neon: nbody_neon.cc Makefile
 	$(CC) $(CCFLAGSBASE) -o $@ $< $(LFLAGS)
+nbody_neon_v2: nbody_neon_v2.cc Makefile
+	$(CC) $(CCFLAGSBASE) $(ARMFLAGS) -o $@ $< $(LFLAGS)
 nbody_avx: nbody_avx.cc Makefile nbody_generate.hh nbody_io.hh
 	$(CC) $(CCFLAGS) $(OMPFLAGS) -o $@ $< $(LFLAGS)
 nbody_vectorized_threaded: nbody_vectorized_threaded.cc Makefile nbody_generate.hh nbody_io.hh
@@ -200,7 +205,7 @@ clean:
 	producer_consumer \
 	nbody_vanilla \
 	nbody_vectorized \
-	nbody_vectorized_v2 \
+	nbody_intel_SoA \
 	nbody_omp \
 	nbody_mpi \
 	nbody_vectorized_threaded \
