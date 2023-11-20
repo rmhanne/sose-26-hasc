@@ -19,7 +19,7 @@ size_t alignment(const void *p)
 }
 
 // initialize matrix in column major order
-void initialize_matrix_cm(int n, int ibegin, int iend, double *A)
+void initialize_matrix(int n, int ibegin, int iend, double *A)
 {
   int w = 10;
   for (int j = 0; j < n; j++)
@@ -35,7 +35,7 @@ void initialize_matrix_cm(int n, int ibegin, int iend, double *A)
 }
 
 // initialize matrix in row major order
-void initialize_matrix(int n, int ibegin, int iend, double *A)
+void initialize_matrix_rm(int n, int ibegin, int iend, double *A)
 {
   int w = 10;
   for (int i = ibegin; i < iend; i++)
@@ -52,7 +52,7 @@ void initialize_matrix(int n, int ibegin, int iend, double *A)
 
 // y = Ax, matrix assumed to be column major layout
 // does matrix times vector for rows i \in [ibegin,iend)
-void matvec_cm(int n, int ibegin, int iend, const double *A, const double *x, double *y)
+void matvec(int n, int ibegin, int iend, const double *A, const double *x, double *y)
 {
   for (int i = ibegin; i < iend; i++)
     y[i] = 0.0;
@@ -63,7 +63,7 @@ void matvec_cm(int n, int ibegin, int iend, const double *A, const double *x, do
 
 // y = Ax, matrix assumed to be row major layout
 // does matrix times vector for rows i \in [ibegin,iend)
-void matvec(int n, int ibegin, int iend, const double *A, const double *x, double *y)
+void matvec_rm(int n, int ibegin, int iend, const double *A, const double *x, double *y)
 {
   for (int i = ibegin; i < iend; ++i)
     y[i] = 0.0;
@@ -186,6 +186,7 @@ void lambda_max_par_thread(std::shared_ptr<GlobalContext> context, int rank)
     context->y[i] = 0.0;
 
   // start timer
+  context->barrier.wait2(rank);
   auto start = get_time_stamp();
 
   // power iteration
@@ -193,7 +194,7 @@ void lambda_max_par_thread(std::shared_ptr<GlobalContext> context, int rank)
   while (i <= 1000)
   {
     matvec(n, ibegin, iend, context->A, context->x, context->y); // parallel matvec y=Ax
-    context->barrier.wait(rank);
+    context->barrier.wait2(rank);
     if (rank == 0)
     {
       double mu = scalar_product(n, context->y, context->x); // Raleigh quotient
@@ -204,7 +205,7 @@ void lambda_max_par_thread(std::shared_ptr<GlobalContext> context, int rank)
       double norm = std::sqrt(scalar_product(n, context->y, context->y));
       copy_scale(n, 1.0 / norm, context->y, context->x);
     }
-    context->barrier.wait(rank);
+    context->barrier.wait2(rank);
     if (context->finished)
       break;
     i++;
