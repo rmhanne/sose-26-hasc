@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <algorithm>
 #include <string>
 #include <cmath>
 #include <thread>
@@ -18,7 +19,7 @@ size_t alignment(const void *p)
 }
 
 // initialize matrix in column major order
-void initialize_matrix(int n, int ibegin, int iend, double *A)
+void initialize_matrix_cm(int n, int ibegin, int iend, double *A)
 {
   int w = 10;
   for (int j = 0; j < n; j++)
@@ -34,7 +35,7 @@ void initialize_matrix(int n, int ibegin, int iend, double *A)
 }
 
 // initialize matrix in row major order
-void initialize_matrix_rm(int n, int ibegin, int iend, double *A)
+void initialize_matrix(int n, int ibegin, int iend, double *A)
 {
   int w = 10;
   for (int i = ibegin; i < iend; i++)
@@ -51,7 +52,7 @@ void initialize_matrix_rm(int n, int ibegin, int iend, double *A)
 
 // y = Ax, matrix assumed to be column major layout
 // does matrix times vector for rows i \in [ibegin,iend)
-void matvec(int n, int ibegin, int iend, const double *A, const double *x, double *y)
+void matvec_cm(int n, int ibegin, int iend, const double *A, const double *x, double *y)
 {
   for (int i = ibegin; i < iend; i++)
     y[i] = 0.0;
@@ -62,7 +63,7 @@ void matvec(int n, int ibegin, int iend, const double *A, const double *x, doubl
 
 // y = Ax, matrix assumed to be row major layout
 // does matrix times vector for rows i \in [ibegin,iend)
-void matvec_rm(int n, int ibegin, int iend, const double *A, const double *x, double *y)
+void matvec(int n, int ibegin, int iend, const double *A, const double *x, double *y)
 {
   for (int i = ibegin; i < iend; ++i)
     y[i] = 0.0;
@@ -102,8 +103,12 @@ void copy_scale(int n, double a, const double *x, double *y)
 }
 
 // sequential version of power method
-double lambda_max(int n, const double *A)
+double lambda_max(int n, double *A)
 {
+  // initialize matrix
+  initialize_matrix(n, 0, n, A);
+
+  // allocate and initialize vectors
   double *x = new (std::align_val_t{64}) double[n];
   double *y = new (std::align_val_t{64}) double[n];
 
@@ -173,12 +178,22 @@ void lambda_max_par_thread(std::shared_ptr<GlobalContext> context, int rank)
   int ibegin = rank * n / P;
   int iend = (rank + 1) * n / P;
 
+  // initialize matrix
+  initialize_matrix(n, ibegin, iend, context->A);
+
+  // prepare summation vector
+  for (int i = ibegin; i < iend; i++)
+    context->y[i] = 0.0;
+
+  // start timer
+  auto start = get_time_stamp();
+
   // power iteration
   int i = 1;
   while (i <= 1000)
   {
     matvec(n, ibegin, iend, context->A, context->x, context->y); // parallel matvec y=Ax
-    context->barrier.wait(rank);
+    context->barrier.wait2(rank);
     if (rank == 0)
     {
       double mu = scalar_product(n, context->y, context->x); // Raleigh quotient
@@ -189,11 +204,16 @@ void lambda_max_par_thread(std::shared_ptr<GlobalContext> context, int rank)
       double norm = std::sqrt(scalar_product(n, context->y, context->y));
       copy_scale(n, 1.0 / norm, context->y, context->x);
     }
-    context->barrier.wait(rank);
+    context->barrier.wait2(rank);
     if (context->finished)
       break;
     i++;
   }
+
+  // stop timer
+  auto stop = get_time_stamp();
+  double elapsed = get_duration_seconds(start, stop);
+  context->elapsed[rank] = elapsed;
 
   // store results
   if (rank == 0)
@@ -217,34 +237,30 @@ double lambda_max_par(int P, int n, double *A)
   context->x = new (std::align_val_t{64}) double[n];
   context->y = new (std::align_val_t{64}) double[n];
 
-  // start timer
-  auto start = get_time_stamp();
-
   // prepare initial vector
   for (int i = 0; i < n; i++)
     context->x[i] = rand();
-  double norm = std::sqrt(scalar_product(n, context->x, context->x));
-  scale(n, 1.0 / norm, context->x);
 
   // now start the threads and wait for
   // the computation to finish
   std::vector<std::thread> th;
-  for (int i = 0; i < P; ++i)
-    th.push_back(std::thread{lambda_max_par_thread, context, i});
-  for (int i = 0; i < P; ++i)
+  for (int i = 0; i < P - 1; ++i)
+    th.push_back(std::thread{lambda_max_par_thread, context, i + 1});
+  lambda_max_par_thread(context, 0);
+  for (int i = 0; i < P - 1; ++i)
     th[i].join();
+
+  // get maximum time of all the threads
+  auto itmax = std::max_element(context->elapsed.begin(), context->elapsed.end());
+  double elapsed = *itmax;
 
   // release memory
   delete[] context->y;
   delete[] context->x;
 
-  auto stop = get_time_stamp();
-  double elapsed = get_duration_seconds(start, stop);
-
   // compute bandwidth
-  double bytes = (n * n + n * 7) * 8;
-  bytes *= context->iterations;
-  std::cout << "Gbytes=" << bytes / 1e9 << " duration=" << elapsed << " bandwidth=" << bytes / 1e9 / elapsed << " GBytes/second" << std::endl;
+  double bytes = (1.0 * n * n + n * 7) * 8 * context->iterations;
+  std::cout << "duration=" << elapsed << " bandwidth=" << bytes / 1e9 / elapsed << " GBytes/second" << std::endl;
   std::cout << "iterations=" << context->iterations << " time_per_iteration=" << elapsed / context->iterations << std::endl;
 
   // and return the result
@@ -307,7 +323,7 @@ void time_matmul_thread(std::shared_ptr<GlobalContext> context, int rank)
   double *A = context->A;
 
   // initialize matrix in row major order
-  initialize_matrix(n,ibegin,iend,A);
+  initialize_matrix(n, ibegin, iend, A);
 
   // prepare initial vector
   for (int i = ibegin; i < iend; i++)
@@ -371,7 +387,7 @@ double time_matmul(int P, int n, double *A)
 
   // print result
   std::cout << "matmul duration=" << elapsed << " iterations=" << context->iterations << " time_per_iteration=" << elapsed / context->iterations << std::endl;
-  double bytes = (1.0 * n * n + 2.0 * n)* 8 * context->iterations;
+  double bytes = (1.0 * n * n + 2.0 * n) * 8 * context->iterations;
   std::cout << "bandwidth=" << bytes / 1e9 / elapsed << " GBytes/second" << std::endl;
   for (int i = 0; i < P; ++i)
     std::cout << i << ": duration=" << context->elapsed[i] << std::endl;
@@ -400,11 +416,10 @@ int main(int argc, char **argv)
   std::cout << "power_method: n=" << n << " P=" << P << std::endl;
   double *A = new (std::align_val_t{64}) double[n * n];
 
-  time_matmul(P, n, A);
-  delete[] A;
-  return 0;
+  // time_matmul(P, n, A);
+  // delete[] A;
+  // return 0;
 
-  initialize_matrix(n, 0, n, A);
   auto lambda = lambda_max_par(P, n, A);
   std::cout << "lambda_max=" << lambda << std::endl;
   delete[] A;
