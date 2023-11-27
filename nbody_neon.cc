@@ -16,7 +16,7 @@
 // basic data type for position, velocity, acceleration
 const int M = 4;
 typedef double double3[M]; // pad up for later use with SIMD
-const int B = 8;					 // block size for tiling
+const int B = 32;					 // block size for tiling
 
 /*const double gamma = 6.674E-11;*/
 const double G = 1.0;
@@ -101,6 +101,8 @@ void acceleration(int n, double3 *__restrict__ x, double *__restrict__ m, double
 					B31 = vcopyq_laneq_f64(B31, 0, A21, 1);
 
 					// now we can compute the four scalar distances and store them in B30/B31 which is now zero
+					B30 = vmovq_n_f64(epsilon2);
+					B31 = vmovq_n_f64(epsilon2);
 					B30 = vfmaq_f64(B30, B00, B00); // fused multiply add
 					B31 = vfmaq_f64(B31, B01, B01);
 					B30 = vfmaq_f64(B30, B10, B10);

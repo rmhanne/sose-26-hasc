@@ -118,7 +118,7 @@ void leapfrog(int n, double dt, double3 *__restrict__ x, double3 *__restrict__ v
     a[i][0] = a[i][1] = a[i][2] = 0.0;
 
   // compute new acceleration: n*(n-1)*13 flops
-  acceleration_blocked(n, x, m, a);
+  acceleration(n, x, m, a);
 
   // update velocity: 6n flops
   for (int i = 0; i < n; i++)

@@ -12,8 +12,8 @@ DPCPP = dpcpp
 #CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 # AVX2 with vector class library
 CCFLAGSBASE2 = -std=c++17 -O3
-CCFLAGSBASE = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
-CCFLAGSBASE3 = -std=c++17 -O1 -funroll-loops -fargument-noalias
+CCFLAGSBASE1 = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
+CCFLAGSBASE = -std=c++17 -O1 -funroll-loops -fargument-noalias
 ARMFLAGS = -ftree-vectorize -march=armv8-a+dotprod -fopt-info-vec
 SSE2FLAGS = -ftree-vectorize -msse2 -fopt-info-vec
 AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
@@ -93,15 +93,13 @@ scalar_product_v4: scalar_product_v4.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 scalar_product_v5: scalar_product_v5.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
-scalar_product_faster: scalar_product_faster.cc Makefile
+scalar_product_neon: scalar_product_neon.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 scalar_product_ms: scalar_product_ms.cc Makefile MessageSystem.hh Barrier.hh
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_seq_v1: matmul_seq_v1.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_M2: matmul_M2.cc Makefile
-	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
-transpose_neon: transpose_neon.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
 matmul_seq_v2: matmul_seq_v2.cc Makefile
 	$(CC) $(CCFLAGS) -o $@ $< $(LFLAGS)
