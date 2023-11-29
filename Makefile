@@ -12,8 +12,7 @@ DPCPP = dpcpp
 #CCFLAGS = -O3 -fno-tree-vectorize -fno-trapping-math -funroll-loops -ffast-math -fopt-info-vec -fargument-noalias
 # AVX2 with vector class library
 CCFLAGSBASE2 = -std=c++17 -O3
-CCFLAGSBASE1 = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
-CCFLAGSBASE = -std=c++17 -O1 -funroll-loops -fargument-noalias
+CCFLAGSBASE = -std=c++17 -O3 -fno-trapping-math -fabi-version=0 -funroll-loops -ffast-math -fargument-noalias
 ARMFLAGS = -ftree-vectorize -march=armv8-a+dotprod -fopt-info-vec
 SSE2FLAGS = -ftree-vectorize -msse2 -fopt-info-vec
 AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
