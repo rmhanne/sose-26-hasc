@@ -108,6 +108,36 @@ void matmul1(int n, const double A[], const double B[], double C[])
               C[INDEX(s, t, n)] += A[INDEX(s, u, n)] * B[INDEX(u, t, n)];
 }
 
+// naive matmul C = A*B + C; this gives the right result for comparison
+void matmul1_buffered(int n, const double A[], const double B[], double C[])
+{
+#pragma omp parallel
+  {
+    double *clocal;
+    clocal = new (std::align_val_t(64)) double[M * M];
+#pragma omp for schedule(static) collapse(2) firstprivate(n, A, B, C)
+    for (int i = 0; i < n; i += M)
+      for (int j = 0; j < n; j += M)
+      {
+        for (int s = 0; s < M; s += 1)
+          for (int t = 0; t < M; t += 1)
+            clocal[s * M + t] = 0.0;
+
+        for (int k = 0; k < n; k += M)
+          for (int s = i; s < i + M; s += 1)
+            for (int u = k; u < k + M; u += 1)
+#pragma omp simd simdlen(4)
+              for (int t = j; t < j + M; t += 1)
+                clocal[(s - i) * M + (t - j)] += A[INDEX(s, u, n)] * B[INDEX(u, t, n)];
+
+        for (int s = 0; s < M; s += 1)
+          for (int t = 0; t < M; t += 1)
+            C[INDEX(i + s, j + t, n)] += clocal[s * M + t];
+      }
+    delete[] clocal;
+  }
+}
+
 #ifdef HAVE_VCL
 // tiling and SIMD with vectorization of 4x12 blocks
 void matmul4(int n, const double A[], const double B[], double C[])
@@ -175,73 +205,90 @@ void matmul4(int n, const double A[], const double B[], double C[])
 #ifdef HAVE_NEON
 void matmul4(int n, const double A[], const double B[], double C[])
 {
-  float64x2_t CC[4][3], BB[3], AA; // fits exactly 16 registers
 
-  // loop over the block matrices
-#pragma omp parallel for schedule(static) firstprivate(n, A, B, C) private(CC, BB, AA) collapse(2)
-  for (int i = 0; i < n; i += M)
-    for (int j = 0; j < n; j += M)
-      for (int k = 0; k < n; k += M)
-        // multiplication of two block matrices C_ij = A_ik*B_kj
-        for (int s = i; s < i + M; s += 4)   // process four rows together
-          for (int t = j; t < j + M; t += 6) // process 3*2=6 columns together
-          {
-            // update a block of 4x6 elements of C_ij
-            CC[0][0] = vld1q_f64(&C[INDEX(s, t, n)]);
-            CC[0][1] = vld1q_f64(&C[INDEX(s, t + 2, n)]);
-            CC[0][2] = vld1q_f64(&C[INDEX(s, t + 4, n)]);
-            CC[1][0] = vld1q_f64(&C[INDEX(s + 1, t, n)]);
-            CC[1][1] = vld1q_f64(&C[INDEX(s + 1, t + 2, n)]);
-            CC[1][2] = vld1q_f64(&C[INDEX(s + 1, t + 4, n)]);
-            CC[2][0] = vld1q_f64(&C[INDEX(s + 2, t, n)]);
-            CC[2][1] = vld1q_f64(&C[INDEX(s + 2, t + 2, n)]);
-            CC[2][2] = vld1q_f64(&C[INDEX(s + 2, t + 4, n)]);
-            CC[3][0] = vld1q_f64(&C[INDEX(s + 3, t, n)]);
-            CC[3][1] = vld1q_f64(&C[INDEX(s + 3, t + 2, n)]);
-            CC[3][2] = vld1q_f64(&C[INDEX(s + 3, t + 4, n)]);
+#pragma omp parallel
+  {
+    float64x2_t CC[4][3], BB[3], AA; // fits exactly 16 registers
+    double *clocal;
+    clocal = new (std::align_val_t(64)) double[M * M];
+    // loop over the block matrices
+#pragma omp for schedule(static) firstprivate(n, A, B, C) private(CC, BB, AA) collapse(2)
+    for (int i = 0; i < n; i += M)
+      for (int j = 0; j < n; j += M)
+      {
+        // clear block write buffer
+        for (int s = 0; s < M; s += 1)
+          for (int t = 0; t < M; t += 1)
+            clocal[s * M + t] = 0.0;
 
-            for (int u = k; u < k + M; u += 1) // four rows times six columns
+        for (int k = 0; k < n; k += M)
+          // multiplication of two block matrices C_ij = A_ik*B_kj
+          for (int s = i; s < i + M; s += 4)   // process four rows together
+            for (int t = j; t < j + M; t += 6) // process 3*2=6 columns together
             {
-              // load elements of B
-              BB[0] = vld1q_f64(&B[INDEX(u, t, n)]);
-              BB[0] = vld1q_f64(&B[INDEX(u, t + 2, n)]);
-              BB[0] = vld1q_f64(&B[INDEX(u, t + 4, n)]);
+              // update a block of 4x6 elements of C_ij
+              CC[0][0] = vld1q_f64(&clocal[INDEX(s - i, t - j, M)]);
+              CC[0][1] = vld1q_f64(&clocal[INDEX(s - i, t - j + 2, M)]);
+              CC[0][2] = vld1q_f64(&clocal[INDEX(s - i, t - j + 4, M)]);
+              CC[1][0] = vld1q_f64(&clocal[INDEX(s - i + 1, t - j, M)]);
+              CC[1][1] = vld1q_f64(&clocal[INDEX(s - i + 1, t - j + 2, M)]);
+              CC[1][2] = vld1q_f64(&clocal[INDEX(s - i + 1, t - j + 4, M)]);
+              CC[2][0] = vld1q_f64(&clocal[INDEX(s - i + 2, t - j, M)]);
+              CC[2][1] = vld1q_f64(&clocal[INDEX(s - i + 2, t - j + 2, M)]);
+              CC[2][2] = vld1q_f64(&clocal[INDEX(s - i + 2, t - j + 4, M)]);
+              CC[3][0] = vld1q_f64(&clocal[INDEX(s - i + 3, t - j, M)]);
+              CC[3][1] = vld1q_f64(&clocal[INDEX(s - i + 3, t - j + 2, M)]);
+              CC[3][2] = vld1q_f64(&clocal[INDEX(s - i + 3, t - j + 4, M)]);
 
-              AA = vmovq_n_f64(A[INDEX(s, u, n)]); // load-broadcast
-              CC[0][0] = vfmaq_f64(CC[0][0], AA, BB[0]);
-              CC[0][1] = vfmaq_f64(CC[0][1], AA, BB[1]);
-              CC[0][2] = vfmaq_f64(CC[0][2], AA, BB[2]);
+              for (int u = k; u < k + M; u += 1) // four rows times six columns
+              {
+                // load elements of B
+                BB[0] = vld1q_f64(&B[INDEX(u, t, n)]);
+                BB[0] = vld1q_f64(&B[INDEX(u, t + 2, n)]);
+                BB[0] = vld1q_f64(&B[INDEX(u, t + 4, n)]);
 
-              AA = vmovq_n_f64(A[INDEX(s + 1, u, n)]); // load-broadcast
-              CC[1][0] = vfmaq_f64(CC[1][0], AA, BB[0]);
-              CC[1][1] = vfmaq_f64(CC[1][1], AA, BB[1]);
-              CC[1][2] = vfmaq_f64(CC[1][2], AA, BB[2]);
+                AA = vmovq_n_f64(A[INDEX(s, u, n)]); // load-broadcast
+                CC[0][0] = vfmaq_f64(CC[0][0], AA, BB[0]);
+                CC[0][1] = vfmaq_f64(CC[0][1], AA, BB[1]);
+                CC[0][2] = vfmaq_f64(CC[0][2], AA, BB[2]);
 
-              AA = vmovq_n_f64(A[INDEX(s + 2, u, n)]); // load-broadcast
-              CC[2][0] = vfmaq_f64(CC[2][0], AA, BB[0]);
-              CC[2][1] = vfmaq_f64(CC[2][1], AA, BB[1]);
-              CC[2][2] = vfmaq_f64(CC[2][2], AA, BB[2]);
+                AA = vmovq_n_f64(A[INDEX(s + 1, u, n)]); // load-broadcast
+                CC[1][0] = vfmaq_f64(CC[1][0], AA, BB[0]);
+                CC[1][1] = vfmaq_f64(CC[1][1], AA, BB[1]);
+                CC[1][2] = vfmaq_f64(CC[1][2], AA, BB[2]);
 
-              AA = vmovq_n_f64(A[INDEX(s + 3, u, n)]); // load-broadcast
-              CC[3][0] = vfmaq_f64(CC[3][0], AA, BB[0]);
-              CC[3][1] = vfmaq_f64(CC[3][1], AA, BB[1]);
-              CC[3][2] = vfmaq_f64(CC[3][2], AA, BB[2]);
+                AA = vmovq_n_f64(A[INDEX(s + 2, u, n)]); // load-broadcast
+                CC[2][0] = vfmaq_f64(CC[2][0], AA, BB[0]);
+                CC[2][1] = vfmaq_f64(CC[2][1], AA, BB[1]);
+                CC[2][2] = vfmaq_f64(CC[2][2], AA, BB[2]);
+
+                AA = vmovq_n_f64(A[INDEX(s + 3, u, n)]); // load-broadcast
+                CC[3][0] = vfmaq_f64(CC[3][0], AA, BB[0]);
+                CC[3][1] = vfmaq_f64(CC[3][1], AA, BB[1]);
+                CC[3][2] = vfmaq_f64(CC[3][2], AA, BB[2]);
+              }
+
+              // write back the update block of 4x6 elements from C_ij to memory
+              vst1q_f64(&clocal[INDEX(s - i, t - j, M)], CC[0][0]);
+              vst1q_f64(&clocal[INDEX(s - i, t - j + 2, M)], CC[0][1]);
+              vst1q_f64(&clocal[INDEX(s - i, t - j + 4, M)], CC[0][2]);
+              vst1q_f64(&clocal[INDEX(s - i + 1, t - j, M)], CC[1][0]);
+              vst1q_f64(&clocal[INDEX(s - i + 1, t - j + 2, M)], CC[1][1]);
+              vst1q_f64(&clocal[INDEX(s - i + 1, t - j + 4, M)], CC[1][2]);
+              vst1q_f64(&clocal[INDEX(s - i + 2, t - j, M)], CC[2][0]);
+              vst1q_f64(&clocal[INDEX(s - i + 2, t - j + 2, M)], CC[2][1]);
+              vst1q_f64(&clocal[INDEX(s - i + 2, t - j + 4, M)], CC[2][2]);
+              vst1q_f64(&clocal[INDEX(s - i + 3, t - j, M)], CC[3][0]);
+              vst1q_f64(&clocal[INDEX(s - i + 3, t - j + 2, M)], CC[3][1]);
+              vst1q_f64(&clocal[INDEX(s - i + 3, t - j + 4, M)], CC[3][2]);
             }
 
-            // write back the update block of 4x6 elements from C_ij to memory
-            vst1q_f64(&C[INDEX(s, t, n)], CC[0][0]);
-            vst1q_f64(&C[INDEX(s, t + 2, n)], CC[0][1]);
-            vst1q_f64(&C[INDEX(s, t + 4, n)], CC[0][2]);
-            vst1q_f64(&C[INDEX(s + 1, t, n)], CC[1][0]);
-            vst1q_f64(&C[INDEX(s + 1, t + 2, n)], CC[1][1]);
-            vst1q_f64(&C[INDEX(s + 1, t + 4, n)], CC[1][2]);
-            vst1q_f64(&C[INDEX(s + 2, t, n)], CC[2][0]);
-            vst1q_f64(&C[INDEX(s + 2, t + 2, n)], CC[2][1]);
-            vst1q_f64(&C[INDEX(s + 2, t + 4, n)], CC[2][2]);
-            vst1q_f64(&C[INDEX(s + 3, t, n)], CC[3][0]);
-            vst1q_f64(&C[INDEX(s + 3, t + 2, n)], CC[3][1]);
-            vst1q_f64(&C[INDEX(s + 3, t + 4, n)], CC[3][2]);
-          }
+        // write back buffer
+        for (int s = 0; s < M; s += 1)
+          for (int t = 0; t < M; t += 1)
+            C[INDEX(i + s, j + t, n)] += clocal[s * M + t];
+      }
+  }
 }
 #endif
 
@@ -339,7 +386,7 @@ int main(int argc, char **argv)
 {
   int P = omp_get_max_threads();
 
-//  std::cout << "memory for 3 matrices in GByte: " << 3.0 * N * N * 8 / 1024 / 1024 / 1024 << std::endl;
+  //  std::cout << "memory for 3 matrices in GByte: " << 3.0 * N * N * 8 / 1024 / 1024 / 1024 << std::endl;
 
   std::vector<int> sizes;
   for (int i = M * 4; i <= N; i *= 2)
