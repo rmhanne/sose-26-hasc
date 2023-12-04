@@ -13,7 +13,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # - dpcpp also has some problems, eg with code that uses eigen
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU|Intel")
-  add_compile_options(-Wall -O3 -march=native -fno-trapping-math -funroll-loops -ffast-math -fargument-noalias)
+  add_compile_options(-Wall -O3 -fno-trapping-math -funroll-loops -ffast-math -ftree-vectorize)
+  if(EMSCRIPTEN) # to use wasm one needs to use emsdk: https://emscripten.org/
+    set(CMAKE_EXECUTABLE_SUFFIX .html)
+    add_compile_options(-msimd128)
+  else()
+    add_compile_options(-march=native -fargument-noalias)
+  endif()
 endif ()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
@@ -143,9 +149,13 @@ endif (OpenMP_FOUND)
 
 add_executable(nbody_vanilla nbody_vanilla.cc)
 
-add_executable(nbody_vectorized nbody_vectorized.cc)
+add_executable(nbody_avx nbody_avx.cc)
 
-add_executable(nbody_vectorized_v2 nbody_vectorized_v2.cc)
+add_executable(nbody_intel_SoA nbody_intel_SoA.cc)
+
+if(EMSCRIPTEN)
+  add_executable(nbody_wasm_SoA nbody_wasm_SoA.cc)
+endif()
 
 if (MPI_FOUND)
   add_executable(nbody_mpi nbody_mpi.cc)

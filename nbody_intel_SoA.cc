@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "nbody_io.hh"
 #include "nbody_generate.hh"
@@ -452,7 +453,7 @@ void acceleration_blocked_vectorized_interleaved(int n, double *__restrict__ x, 
 
 /** \brief compute acceleration vector from position and masses
  *
- * Vectorized version blocked: works on WxW masses; symmetry is exploited; transpose for scalar factors needed
+ * Vectorized version blocked: works on 4x4 masses; symmetry is exploited; transpose for scalar factors needed
  * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
  * flops including 1 division and one square root
  */
@@ -738,6 +739,175 @@ void acceleration_4x4(int n, double *__restrict__ x, double *__restrict__ m, dou
 	}
 }
 
+void
+transpose(std::array<Vec2d, 2>& A)
+{
+  Vec2d T = blend2<1, 2>(A[0], A[1]); // A01, A10
+
+  A[0] = blend2<0, 3>(A[0], T);       // A00, A10
+  A[1] = blend2<2, 1>(A[1], T);       // A01, A11
+}
+
+void
+transpose(std::array<Vec4d, 4>& A)
+{
+  std::array<Vec4d, 4> T;
+  T[0] = blend4<0, 4, 2, 6>(A[0], A[1]); // A00, A10, A02, A12
+  T[1] = blend4<1, 5, 3, 7>(A[0], A[1]); // A01, A11, A03, A13
+  T[2] = blend4<0, 4, 2, 6>(A[2], A[3]); // A20, A30, A22, A32
+  T[3] = blend4<1, 5, 3, 7>(A[2], A[3]); // A21, A31, A23, A33
+
+  A[0] = blend4<0, 1, 4, 5>(T[0], T[2]); // A00, A10, A20, A30
+  A[1] = blend4<0, 1, 4, 5>(T[1], T[3]); // A01, A11, A21, A31
+  A[2] = blend4<2, 3, 6, 7>(T[0], T[2]); // A02, A12, A22, A32
+  A[3] = blend4<2, 3, 6, 7>(T[1], T[3]); // A03, A13, A23, A33
+}
+
+void
+transpose(std::array<Vec8d, 8>& A)
+{
+  std::array<Vec8d, 8> T;
+  T[0] = blend8<0, 8, 2, 10, 4, 12, 6, 14>(A[0], A[1]); // 00, 10, 02, 12, 04, 14, 06, 16
+  T[1] = blend8<1, 9, 3, 11, 5, 13, 7, 15>(A[0], A[1]); // 01, 11, 03, 13, 05, 15, 07, 17
+  T[2] = blend8<0, 8, 2, 10, 4, 12, 6, 14>(A[2], A[3]); // 20, 30, 22, 32, 24, 34, 26, 36
+  T[3] = blend8<1, 9, 3, 11, 5, 13, 7, 15>(A[2], A[3]); // 21, 31, 23, 33, 25, 35, 27, 37
+  T[4] = blend8<0, 8, 2, 10, 4, 12, 6, 14>(A[4], A[5]); // 40, 50, 42, 52, 44, 54, 46, 56
+  T[5] = blend8<1, 9, 3, 11, 5, 13, 7, 15>(A[4], A[5]); // 41, 51, 43, 53, 45, 55, 47, 57
+  T[6] = blend8<0, 8, 2, 10, 4, 12, 6, 14>(A[6], A[7]); // 60, 70, 62, 72, 64, 74, 66, 76
+  T[7] = blend8<1, 9, 3, 11, 5, 13, 7, 15>(A[6], A[7]); // 61, 71, 63, 73, 65, 75, 67, 77
+
+  A[0] = blend8<0,  1,  8,  9,  4,  5, 12, 13>(T[0], T[2]); // 00, 10, 20, 30, 04, 14, 24, 34
+  A[1] = blend8<0,  1,  8,  9,  4,  5, 12, 13>(T[1], T[3]); // 01, 11, 21, 31, 05, 15, 25, 35
+  A[2] = blend8<2,  3, 10, 11,  6,  7, 14, 15>(T[0], T[2]); // 02, 12, 22, 32, 06, 16, 26, 36
+  A[3] = blend8<2,  3, 10, 11,  6,  7, 14, 15>(T[1], T[3]); // 03, 13, 23, 33, 07, 17, 27, 37
+  A[4] = blend8<0,  1,  8,  9,  4,  5, 12, 13>(T[4], T[6]); // 40, 50, 60, 70, 44, 54, 64, 74
+  A[5] = blend8<0,  1,  8,  9,  4,  5, 12, 13>(T[5], T[7]); // 41, 51, 61, 71, 45, 55, 65, 75
+  A[6] = blend8<2,  3, 10, 11,  6,  7, 14, 15>(T[4], T[6]); // 42, 52, 62, 72, 46, 56, 66, 76
+  A[7] = blend8<2,  3, 10, 11,  6,  7, 14, 15>(T[5], T[7]); // 43, 53, 63, 73, 47, 57, 67, 77
+
+  T[0] = blend8< 0,  1,  2,  3,  8,  9, 10, 11>(A[0], A[4]); // 00, 10, 20, 30, 40, 50, 60, 70
+  T[1] = blend8< 0,  1,  2,  3,  8,  9, 10, 11>(A[1], A[5]); // 01, 11, 21, 31, 41, 51, 61, 71
+  T[2] = blend8< 0,  1,  2,  3,  8,  9, 10, 11>(A[2], A[6]); // 02, 12, 22, 32, 42, 52, 62, 72
+  T[3] = blend8< 0,  1,  2,  3,  8,  9, 10, 11>(A[3], A[7]); // 03, 13, 23, 33, 43, 53, 63, 73
+  T[4] = blend8<12, 13, 14, 15,  4,  5,  6,  7>(A[4], A[0]); // 04, 14, 24, 34, 44, 54, 64, 74
+  T[5] = blend8<12, 13, 14, 15,  4,  5,  6,  7>(A[5], A[1]); // 05, 15, 25, 35, 45, 55, 65, 75
+  T[6] = blend8<12, 13, 14, 15,  4,  5,  6,  7>(A[6], A[2]); // 06, 16, 26, 36, 46, 56, 66, 76
+  T[7] = blend8<12, 13, 14, 15,  4,  5,  6,  7>(A[7], A[3]); // 07, 17, 27, 37, 47, 57, 67, 77
+
+  A = T;
+}
+
+
+
+/** \brief compute acceleration vector from position and masses
+ *
+ * Vectorized version blocked: works on WxW masses; symmetry is exploited; transpose for scalar factors needed
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+template<size_t simd_width>
+void
+acceleration_WxW(int n,
+                 double* __restrict__ x,
+                 double* __restrict__ m,
+                 double* __restrict__ a)
+{
+  const size_t W = simd_width;                               // SIMD width
+  using VecWd = typename SIMDSelector<simd_width>::SIMDType; // SIMD type
+
+  {
+    for (int I = 0; I < n; I += B) {
+      // diagonal block
+      for (int i = I; i < I + B; i++) {
+        for (int j = i + 1; j < I + B; j++) {
+          double d0 = x[j] - x[i];
+          double d1 = x[n + j] - x[n + i];
+          double d2 = x[2 * n + j] - x[2 * n + i];
+          double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+          double r = sqrt(r2);
+          double invfact = G / (r * r2);
+          double factori = m[i] * invfact;
+          double factorj = m[j] * invfact;
+          a[i] += factorj * d0;
+          a[n + i] += factorj * d1;
+          a[2 * n + i] += factorj * d2;
+          a[j] -= factori * d0;
+          a[n + j] -= factori * d1;
+          a[2 * n + j] -= factori * d2;
+        }
+      }
+
+      for (int J = I; J < n; J += B) {
+        for (int i = I; i < I + B; i += W) {
+          std::array<VecWd, 3> Xi;
+          Xi[0].load(&x[i]);
+          Xi[1].load(&x[n + i]);
+          Xi[2].load(&x[2 * n + i]);
+          for (int j = J; j < J + B; j += W) {
+            // load acceleration for i-index
+            std::array<VecWd, 3> A;
+            A[0].load(&a[i]);
+            A[1].load(&a[n + i]);
+            A[2].load(&a[2 * n + i]);
+            std::array<VecWd, W> N;
+            for (int w = 0; w != W; w += 1) {
+              std::array<VecWd, 3> Dj{ VecWd(x[j + w]),
+                                       VecWd(x[n + j + w]),
+                                       VecWd(x[2 * n + j + w]) };
+              Dj[0] -= Xi[0];
+              Dj[1] -= Xi[1];
+              Dj[2] -= Xi[2];
+              N[w] = VecWd(epsilon2);
+              N[w] = mul_add(Dj[0], Dj[0], N[w]);
+              N[w] = mul_add(Dj[1], Dj[1], N[w]);
+              N[w] = mul_add(Dj[2], Dj[2], N[w]);
+              // calculate row of N := G/d_ji^3 (note that this is transposed -> ji vs ij!)
+              N[w] = VecWd(G) / (N[w] * sqrt(N[w]));
+              // update acceleration for mass i (note that we take adventage of the transposed N)
+              VecWd M(m[i + w]);
+              A[0] = mul_add(M * Dj[0], N[w], A[0]);
+              A[1] = mul_add(M * Dj[1], N[w], A[1]);
+              A[2] = mul_add(M * Dj[2], N[w], A[2]);
+            }
+            // now we need to transpose N
+            transpose(N); // N_ji -> N_ij
+            // store acceleration for i-index
+            A[0].store(&a[i]);
+            A[1].store(&a[n + i]);
+            A[2].store(&a[2 * n + i]);
+            // load acceleration for j-index
+            A[0].load(&a[j]);
+            A[1].load(&a[n + j]);
+            A[2].load(&a[2 * n + j]);
+
+            std::array<VecWd, 3> Xj;
+            Xj[0].load(&x[j]);
+            Xj[1].load(&x[n + j]);
+            Xj[2].load(&x[2 * n + j]);
+            // update acceleration for mass j (note that we need the non-transposed version of N)
+            for (int w = 0; w != W; w += 1) {
+              std::array<VecWd, 3> Di{ VecWd(x[i + w]),
+                                       VecWd(x[n + i + w]),
+                                       VecWd(x[2 * n + i + w]) };
+              Di[0] -= Xj[0];
+              Di[1] -= Xj[1];
+              Di[2] -= Xj[2];
+              VecWd M(m[j + w]);
+              A[0] = mul_add(M * Di[0], N[w], A[0]);
+              A[1] = mul_add(M * Di[1], N[w], A[1]);
+              A[2] = mul_add(M * Di[2], N[w], A[2]);
+            }
+            // store acceleration for j-index
+            A[0].store(&a[j]);
+            A[1].store(&a[n + j]);
+            A[2].store(&a[2 * n + j]);
+          }
+        }
+      }
+    }
+  }
+}
+
 #ifdef __AVX512F__
 void acceleration_blocked_vectorized_512(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
 {
@@ -977,7 +1147,8 @@ void leapfrog(int n, double dt, double *__restrict__ x, double *__restrict__ v, 
 
 	// compute new acceleration: n*(n-1)*13 flops
 	// acceleration(n,x,m,a);
-	acceleration_4x4(n,x,m,a);
+	// acceleration_4x4(n,x,m,a);
+	acceleration_WxW<4>(n,x,m,a);
 	// acceleration_blocked(n,x,m,a);
 	// acceleration_blocked_full(n,x,m,a);
 	// acceleration_blocked_vectorized<2>(n,x,m,a);
