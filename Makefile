@@ -40,7 +40,6 @@ all: scalar_product_v1\
      scalar_product_v4\
      scalar_product_v5\
      scalar_product_ms\
-     scalar_product_faster\
      matmul_seq_v1\
      matmul_M2\
      matmul_seq_v2\
