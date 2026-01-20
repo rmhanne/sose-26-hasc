@@ -1,3 +1,7 @@
+# Beware!
+
+I am currently restructuring the code for the lecture in summer semester 2026! This read me is not up to date and the code is not ready yet.
+
 # hasc-code
 
 This repository collects code for the hardware aware scientific computing lecture. The code in this repository will change as the lecture proceeds so expect some changes and merge conflicts if you change anything in here.
