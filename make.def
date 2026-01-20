@@ -1,0 +1,73 @@
+# define here the compilers and options to be used in all makefiles in the subdirectories
+# I want to keep it as simple as possible and not fiddle around with build system issues
+
+######################
+# first we set all the different compilers
+######################
+
+# C++ compiler for sequential programs
+CC = g++
+
+# C++ compiler for openMP programs
+CCOMP = g++
+
+# C++ compiler for MPI programs
+CCMPI = mpicxx 
+
+# C++ compiler to be used for Intel oneAPI TBB programs
+CCTBB = g++
+
+# C++ compiler to be used for Intel oneAPI Sycl programs
+DPCPP = icpx -fsycl
+
+######################
+# now set compilation options for various configurations
+######################
+
+# options to be used with all compilers
+CCFLAGSBASE = -std=c++17 -O3 -fno-trapping-math -funroll-loops -ffast-math -fargument-noalias
+
+# additional flags for openMP compilation
+OMPFLAGS = -fopenmp
+
+# additional flags for MPI compilation
+MPIFLAGS = 
+
+# additional flags to enforce no autovectorization
+#SCALARFLAGS = 
+SCALARFLAGS = -fno-tree-vectorize
+
+# additional flags for ARM neon compilation
+ARMFLAGS = -ftree-vectorize -march=armv8-a+dotprod -fopt-info-vec
+
+# additional flags for sse2 compilation
+SSE2FLAGS = -ftree-vectorize -msse2 -fopt-info-vec
+
+# additional flags for AVX2 compilation
+AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
+
+# additional flags for AVX512 compilation
+AVX512FLAGS = -ftree-vectorize -mavx512f -mfma -fopt-info-vec
+
+# additional flags for Intel oneAPI Sycl compilation 
+DPCPPFLAGS = -I/opt/intel/oneapi/2025.3/include
+
+
+######################
+# now set linker options for various configurations
+######################
+
+# linker options used in all configurations
+LFLAGS = -lm
+
+# additional options for openMP programs
+LFLAGSOMP = -lpthread
+
+# additional options for mpi programs
+LFLAGSMPI = -lpthread
+
+# additional options for TBB programs
+LFLAGSTBB = -L/opt/intel/oneapi/2025.3/lib -ltbb
+
+# additional options for oneAPI Sycl programs
+LFLAGSDPCPP =
