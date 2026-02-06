@@ -1,0 +1,758 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <mutex>
+
+#include "nbody_io.hh"
+#include "nbody_generate.hh"
+#include "time_experiment.hh"
+
+#ifdef _OPENMP
+#include <omp.h> // headers for runtime if available
+#endif
+
+#define HAVE_NEON 1
+
+#ifdef HAVE_VCL
+#include "vcl/vectorclass.h"
+#endif
+
+#ifdef HAVE_NEON
+#include <arm_neon.h>
+#endif
+
+#ifndef __GNUC__
+#define __restrict__
+#endif
+
+// basic data type for position, velocity, acceleration
+const int M = 3;
+typedef double double3[M]; // pad up for later use with SIMD
+const int B = 128;				 // block size for tiling
+
+// const double G = 6.674E-11;
+const double G = 1.0;
+const double epsilon2 = 1E-10;
+
+/** \brief compute acceleration vector from position and masses (vanilla sequential version)
+ *
+ * This version works on structure of arrays data layout
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ a)
+{
+	for (int i = 0; i < n; i++)
+		for (int j = i + 1; j < n; j++)
+		{
+			double d0 = x[j] - x[i];
+			double d1 = x[n + j] - x[n + i];
+			double d2 = x[2 * n + j] - x[2 * n + i];
+			double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+			double r = sqrt(r2);
+			double invfact = G / (r * r2);
+			double factori = m[i] * invfact;
+			double factorj = m[j] * invfact;
+			a[i] += factorj * d0;
+			a[n + i] += factorj * d1;
+			a[2 * n + i] += factorj * d2;
+			a[j] -= factori * d0;
+			a[n + j] -= factori * d1;
+			a[2 * n + j] -= factori * d2;
+		}
+}
+
+/** \brief compute acceleration vector from position and masses
+ *
+ * Vanilla version blocked but without buffers
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration_blocked(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ a)
+{
+	for (int I = 0; I < n; I += B)
+	{
+		// diagonal block
+		for (int i = I; i < I + B; i++)
+			for (int j = i + 1; j < I + B; j++)
+			{
+				double d0 = x[j] - x[i];
+				double d1 = x[n + j] - x[n + i];
+				double d2 = x[2 * n + j] - x[2 * n + i];
+				double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+				double r = sqrt(r2);
+				double invfact = G / (r * r2);
+				double factori = m[i] * invfact;
+				double factorj = m[j] * invfact;
+				a[i] += factorj * d0;
+				a[n + i] += factorj * d1;
+				a[2 * n + i] += factorj * d2;
+				a[j] -= factori * d0;
+				a[n + j] -= factori * d1;
+				a[2 * n + j] -= factori * d2;
+			}
+		// upper diagonal full blocks
+		for (int J = I + B; J < n; J += B)
+			for (int j = J; j < J + B; j++)
+				for (int i = I; i < I + B; i++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					a[i] += factorj * d0;
+					a[n + i] += factorj * d1;
+					a[2 * n + i] += factorj * d2;
+					a[j] -= factori * d0;
+					a[n + j] -= factori * d1;
+					a[2 * n + j] -= factori * d2;
+				}
+	}
+}
+
+/** \brief compute acceleration vector from position and masses (blocked OMP parallel version)
+ *
+ * This version works on structure of arrays data layout
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration_blocked_buffered(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
+{
+	// make private acceleration vectors to accumulate to
+	// these are then added to aglobal
+	double *aI;
+	aI = new (std::align_val_t(64)) double[3 * B];
+	double *aJ;
+	aJ = new (std::align_val_t(64)) double[3 * B];
+
+	for (int I = 0; I < n; I += B)
+	{
+		// clear accelerations for whole block row
+		for (int i = 0; i < 3 * B; ++i)
+			aI[i] = 0.0;
+
+		// diagonal block
+		for (int i = I; i < I + B; i++)
+			for (int j = i + 1; j < I + B; j++)
+			{
+				double d0 = x[j] - x[i];
+				double d1 = x[n + j] - x[n + i];
+				double d2 = x[2 * n + j] - x[2 * n + i];
+				double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+				double r = sqrt(r2);
+				double invfact = G / (r * r2);
+				double factori = m[i] * invfact;
+				double factorj = m[j] * invfact;
+				aI[i - I] += factorj * d0; // updates private vector
+				aI[i - I + B] += factorj * d1;
+				aI[i - I + 2 * B] += factorj * d2;
+				aI[j - I] -= factori * d0;
+				aI[j - I + B] -= factori * d1;
+				aI[j - I + 2 * B] -= factori * d2;
+			}
+
+		// blocks in upper triangle
+		for (int J = I + B; J < n; J += B)
+		{
+			// clear accelerations for whole block column
+			for (int j = 0; j < 3 * B; ++j)
+				aJ[j] = 0.0;
+
+			for (int i = I; i < I + B; i++)
+				for (int j = J; j < J + B; j++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					aI[i - I] += factorj * d0; // updates private vector
+					aI[i - I + B] += factorj * d1;
+					aI[i - I + 2 * B] += factorj * d2;
+					aJ[j - J] -= factori * d0;
+					aJ[j - J + B] -= factori * d1;
+					aJ[j - J + 2 * B] -= factori * d2;
+				}
+
+			// update accelerations for block J
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j] += aJ[j];
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j + n] += aJ[j + B];
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j + 2 * n] += aJ[j + 2 * B];
+		} // end J loop
+		// update accelerations of block I
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i] += aI[i];
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i + n] += aI[i + B];
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i + 2 * n] += aI[i + 2 * B];
+	} // end I loop
+	// delete thread local data
+	delete[] aI;
+	delete[] aJ;
+}
+
+/** \brief compute acceleration vector from position and masses (blocked OMP parallel version)
+ *
+ * This version works on structure of arrays data layout
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration_blocked_omp(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
+{
+	std::vector<std::mutex> mutexes(n / B); // one mutex per block
+
+#pragma omp parallel firstprivate(n, x, m, aglobal)
+	{
+		// make private acceleration vectors to accumulate to
+		// these are then added to aglobal in critical sections
+		double *aI;
+		aI = new (std::align_val_t(64)) double[3 * B];
+		double *aJ;
+		aJ = new (std::align_val_t(64)) double[3 * B];
+
+		// parallel loop over block rows with *cyclic* partitioning
+#pragma omp for schedule(dynamic, 1)
+		for (int I = 0; I < n; I += B)
+		{
+			// clear accelerations for whole block row
+			for (int i = 0; i < 3 * B; ++i)
+				aI[i] = 0.0;
+
+			// diagonal block
+			for (int i = I; i < I + B; i++)
+				for (int j = i + 1; j < I + B; j++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					aI[i - I] += factorj * d0; // updates private vector
+					aI[i - I + B] += factorj * d1;
+					aI[i - I + 2 * B] += factorj * d2;
+					aI[j - I] -= factori * d0;
+					aI[j - I + B] -= factori * d1;
+					aI[j - I + 2 * B] -= factori * d2;
+				}
+
+			// blocks in upper triangle
+			for (int J = I + B; J < n; J += B)
+			{
+				// clear accelerations for whole block column
+				for (int j = 0; j < 3 * B; ++j)
+					aJ[j] = 0.0;
+
+				for (int i = I; i < I + B; i++)
+					for (int j = J; j < J + B; j++)
+					{
+						double d0 = x[j] - x[i];
+						double d1 = x[n + j] - x[n + i];
+						double d2 = x[2 * n + j] - x[2 * n + i];
+						double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+						double r = sqrt(r2);
+						double invfact = G / (r * r2);
+						double factori = m[i] * invfact;
+						double factorj = m[j] * invfact;
+						aI[i - I] += factorj * d0; // updates private vector
+						aI[i - I + B] += factorj * d1;
+						aI[i - I + 2 * B] += factorj * d2;
+						aJ[j - J] -= factori * d0;
+						aJ[j - J + B] -= factori * d1;
+						aJ[j - J + 2 * B] -= factori * d2;
+					}
+
+				// update accelerations for block J
+				// #pragma omp critical
+				std::lock_guard<std::mutex> ul{mutexes[J / B]};
+				{
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j] += aJ[j];
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j + n] += aJ[j + B];
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j + 2 * n] += aJ[j + 2 * B];
+				}
+			} // end J loop
+				// update accelerations of block I
+			// #pragma omp critical
+			std::lock_guard<std::mutex> ul{mutexes[I / B]};
+			{
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i] += aI[i];
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i + n] += aI[i + B];
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i + 2 * n] += aI[i + 2 * B];
+			}
+		} // end I loop
+		// delete thread local data
+		delete[] aI;
+		delete[] aJ;
+	}
+}
+
+#ifdef HAVE_NEON
+/** \brief compute acceleration vector from position and masses (vectorized using 2x2 masses)
+ *
+ * This version works on structure of arrays data layout
+ */
+void acceleration_blocked_vectorized(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
+{
+#pragma omp parallel firstprivate(n, x, m, aglobal)
+	{
+		float64x2_t XJ0, XJ1, XJ2;
+		float64x2_t XI0, XI1, XI2;
+		float64x2_t D0, D1, D2;
+		float64x2_t R0, R1;
+		float64x2_t A0, A1, A2;
+		float64x2_t S, M;
+
+		// make private acceleration vectors to accumulate to
+		// these are then added to aglobal in critical sections
+		double *aI;
+		aI = new (std::align_val_t(64)) double[3 * B];
+		double *aJ;
+		aJ = new (std::align_val_t(64)) double[3 * B];
+
+		// parallel loop over block rows with cyclic partitioning
+#pragma omp for schedule(dynamic, 1)
+		for (int I = 0; I < n; I += B)
+		{
+			// clear accelerations for whole block row
+			for (int i = 0; i < 3 * B; ++i)
+				aI[i] = 0.0;
+
+			// diagonal block (I,I) is handled in the standard way exploiting symmetry
+			for (int i = I; i < I + B; i++)
+				for (int j = i + 1; j < I + B; j++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					aI[i - I] += factorj * d0;
+					aI[i - I + B] += factorj * d1;
+					aI[i - I + 2 * B] += factorj * d2;
+					aI[j - I] -= factori * d0;
+					aI[j - I + B] -= factori * d1;
+					aI[j - I + 2 * B] -= factori * d2;
+				}
+
+			// blocks J>I can also exploit symmetry
+			for (int J = I + B; J < n; J += B)
+			{
+				// clear accelerations for whole block column
+				for (int j = 0; j < 3 * B; ++j)
+					aJ[j] = 0.0;
+
+				// compute interactions of blocks I and J
+				for (int i = I; i < I + B; i += 2)
+					for (int j = J; j < J + B; j += 2)
+					{
+						// compute interaction of 2x2 masses i,i+1 and j,j+1
+
+						// load positions of two particles starting at j
+						XJ0 = vld1q_f64(&(x[j]));					// x coordinates
+						XJ1 = vld1q_f64(&(x[j + n]));			// y coordinates
+						XJ2 = vld1q_f64(&(x[j + 2 * n])); // z coordinates
+
+						// difference to mass i
+						XI0 = vmovq_n_f64(x[i]);				 // load broadcast for x-coordinate
+						XI1 = vmovq_n_f64(x[i + n]);		 // load broadcast for y-coordinate
+						XI2 = vmovq_n_f64(x[i + 2 * n]); // load broadcast for z-coordinate
+						D0 = vsubq_f64(XJ0, XI0);				 // distance j,j+1-i, x-coordinate
+						D1 = vsubq_f64(XJ1, XI1);				 // distance j,j+1-i, y-coordinate
+						D2 = vsubq_f64(XJ2, XI2);				 // distance j,j+1-i, z-coordinate
+						A0 = vmovq_n_f64(epsilon2);			 // now compute squared distances
+						A0 = vfmaq_f64(A0, D0, D0);			 // fma
+						A0 = vfmaq_f64(A0, D1, D1);			 // fma
+						A0 = vfmaq_f64(A0, D2, D2);			 // fma
+						// now A0 = ( ||x_j-x_i||^2 ; ||x_{j+1}-x_i||^2)
+						R0 = vsqrtq_f64(A0); // compute square roots; the advantage is, we do not need the result immediately
+
+						// difference to mass i+1
+						XI0 = vmovq_n_f64(x[i + 1]);				 // load broadcast for x-coordinate
+						XI1 = vmovq_n_f64(x[i + 1 + n]);		 // load broadcast for y-coordinate
+						XI2 = vmovq_n_f64(x[i + 1 + 2 * n]); // load broadcast for z-coordinate
+						D0 = vsubq_f64(XJ0, XI0);						 // distance j,j+1-i+1, x-coordinate
+						D1 = vsubq_f64(XJ1, XI1);						 // distance j,j+1-i+1, y-coordinate
+						D2 = vsubq_f64(XJ2, XI2);						 // distance j,j+1-i+1, z-coordinate
+						A1 = vmovq_n_f64(epsilon2);					 // now compute squared distances
+						A1 = vfmaq_f64(A1, D0, D0);					 // fma
+						A1 = vfmaq_f64(A1, D1, D1);					 // fma
+						A1 = vfmaq_f64(A1, D2, D2);					 // fma
+						// now A1 = ( ||x_j-x_{i+1}||^2 ; ||x_{j+1}-x_{i+1}||^2)
+						R1 = vsqrtq_f64(A1); // compute square roots; the advantage is, we do not need the result immediately
+
+						// now we proceed to compute the scalar factors s_{i,j} = G/r_{i,j}^3
+						A0 = vmulq_f64(A0, R0); // now A0 is distance^3
+						A1 = vmulq_f64(A1, R1); // now A1 is distance^3
+						D0 = vmovq_n_f64(G);		// load broadcast for G
+						R0 = vdivq_f64(D0, A0);
+						R1 = vdivq_f64(D0, A1);
+						// Now R0, R1 contain the scalar factors in the following form
+						// R0 = (s_{j,i} ; s_{j+1,i})
+						// R1 = (s_{j,i+1} ; s_{j+1,i+1})
+
+						// now we update the accelerations of the four masses
+
+						// FIRST contribution to acceleration of masses j,j+1 *from* masses i and i+1
+						// load acceleration of masses j,j+1
+						A0 = vld1q_f64(&(aJ[j - J]));					// x coordinates
+						A1 = vld1q_f64(&(aJ[j - J + B]));			// y coordinates
+						A2 = vld1q_f64(&(aJ[j - J + 2 * B])); // z coordinates
+
+						// contribution from mass i
+						// XJ* still contains the positions of j,j+1. But we need to recompute the differences
+						XI0 = vmovq_n_f64(x[i]);				 // load broadcast for x-coordinate
+						XI1 = vmovq_n_f64(x[i + n]);		 // load broadcast for y-coordinate
+						XI2 = vmovq_n_f64(x[i + 2 * n]); // load broadcast for z-coordinate
+						// build difference vectors
+						D0 = vsubq_f64(XI0, XJ0); // distance i-j,j+1, x-coordinate
+						D1 = vsubq_f64(XI1, XJ1); // distance i-j,j+1, y-coordinate
+						D2 = vsubq_f64(XI2, XJ2); // distance i-j,j+1, z-coordinate
+						// build scalar factors
+						S = vmovq_n_f64(m[i]);
+						S = vmulq_f64(S, R0);
+						// update
+						A0 = vfmaq_f64(A0, S, D0); // fma
+						A1 = vfmaq_f64(A1, S, D1); // fma
+						A2 = vfmaq_f64(A2, S, D2); // fma
+
+						// contribution from mass i+1
+						// XJ* still contains the positions of j,j+1. But we need to recompute the differences
+						XI0 = vmovq_n_f64(x[i + 1]);				 // load broadcast for x-coordinate
+						XI1 = vmovq_n_f64(x[i + 1 + n]);		 // load broadcast for y-coordinate
+						XI2 = vmovq_n_f64(x[i + 1 + 2 * n]); // load broadcast for z-coordinate
+						// build difference vectors
+						D0 = vsubq_f64(XI0, XJ0); // distance i+1-j,j+1, x-coordinate
+						D1 = vsubq_f64(XI1, XJ1); // distance i+1-j,j+1, y-coordinate
+						D2 = vsubq_f64(XI2, XJ2); // distance i+1-j,j+1, z-coordinate
+						// build scalar factors
+						S = vmovq_n_f64(m[i + 1]);
+						S = vmulq_f64(S, R1);
+						// update
+						A0 = vfmaq_f64(A0, S, D0); // fma
+						A1 = vfmaq_f64(A1, S, D1); // fma
+						A2 = vfmaq_f64(A2, S, D2); // fma
+
+						// store acceleration of masses j,j+1
+						vst1q_f64(&(aJ[j - J]), A0);
+						vst1q_f64(&(aJ[j - J + B]), A1);
+						vst1q_f64(&(aJ[j - J + 2 * B]), A2);
+
+						// SECOND contribution to acceleration of masses i,i+1 *from* masses j and j+1
+						// load coordinates of i,i+1 in SIMD register
+						XI0 = vld1q_f64(&(x[i]));					// x coordinates
+						XI1 = vld1q_f64(&(x[i + n]));			// y coordinates
+						XI2 = vld1q_f64(&(x[i + 2 * n])); // z coordinates
+
+						// contribution from mass j
+						XJ0 = vmovq_n_f64(x[j]);				 // load broadcast for x-coordinate
+						XJ1 = vmovq_n_f64(x[j + n]);		 // load broadcast for y-coordinate
+						XJ2 = vmovq_n_f64(x[j + 2 * n]); // load broadcast for z-coordinate
+						// build difference vectors
+						D0 = vsubq_f64(XJ0, XI0); // distance i+1-j,j+1, x-coordinate
+						D1 = vsubq_f64(XJ1, XI1); // distance i+1-j,j+1, y-coordinate
+						D2 = vsubq_f64(XJ2, XI2); // distance i+1-j,j+1, z-coordinate
+						// build scalar factors
+						M = vmovq_n_f64(m[j]);
+						S = R0;
+						S = vcopyq_laneq_f64(S, 1, R1, 0);
+						S = vmulq_f64(S, M);
+						// load acceleration of masses i,i+1
+						A0 = vld1q_f64(&(aI[i - I]));					// x coordinates
+						A1 = vld1q_f64(&(aI[i - I + B]));			// y coordinates
+						A2 = vld1q_f64(&(aI[i - I + 2 * B])); // z coordinates
+						// update
+						A0 = vfmaq_f64(A0, S, D0); // fma
+						A1 = vfmaq_f64(A1, S, D1); // fma
+						A2 = vfmaq_f64(A2, S, D2); // fma
+
+						// contribution from mass j+1
+						XJ0 = vmovq_n_f64(x[j + 1]);				 // load broadcast for x-coordinate
+						XJ1 = vmovq_n_f64(x[j + 1 + n]);		 // load broadcast for y-coordinate
+						XJ2 = vmovq_n_f64(x[j + 1 + 2 * n]); // load broadcast for z-coordinate
+						// build difference vectors
+						D0 = vsubq_f64(XJ0, XI0); // distance i+1-j,j+1, x-coordinate
+						D1 = vsubq_f64(XJ1, XI1); // distance i+1-j,j+1, y-coordinate
+						D2 = vsubq_f64(XJ2, XI2); // distance i+1-j,j+1, z-coordinate
+						// build scalar factors
+						M = vmovq_n_f64(m[j + 1]);
+						S = R1;
+						S = vcopyq_laneq_f64(S, 0, R0, 1);
+						S = vmulq_f64(S, M);
+						// update
+						A0 = vfmaq_f64(A0, S, D0); // fma
+						A1 = vfmaq_f64(A1, S, D1); // fma
+						A2 = vfmaq_f64(A2, S, D2); // fma
+
+						// store acceleration of masses i,i+1
+						vst1q_f64(&(aI[i - I]), A0);
+						vst1q_f64(&(aI[i - I + B]), A1);
+						vst1q_f64(&(aI[i - I + 2 * B]), A2);
+					}
+					// update accelerations for block J
+#pragma omp critical
+				{
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j] += aJ[j];
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j + n] += aJ[j + B];
+					for (int j = 0; j < B; ++j)
+						aglobal[J + j + 2 * n] += aJ[j + 2 * B];
+				}
+			} // end loop over J
+
+			// update accelerations of block I
+#pragma omp critical
+			{
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i] += aI[i];
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i + n] += aI[i + B];
+				for (int i = 0; i < B; ++i)
+					aglobal[I + i + 2 * n] += aI[i + 2 * B];
+			}
+		} // end loop over I
+		delete[] aI;
+		delete[] aJ;
+	}
+}
+#endif
+
+/** \brief do one time step with leapfrog
+ *
+ * does n*(n-1)*13 + 12n flops
+ */
+void leapfrog(int n, double dt, double *__restrict__ x, double *__restrict__ v, double *__restrict__ m, double *__restrict__ a)
+{
+	// update position: 6n flops
+	for (int i = 0; i < 3 * n; i++)
+		x[i] += dt * v[i];
+
+	// save and clear acceleration
+	for (int i = 0; i < 3 * n; i++)
+		a[i] = 0.0;
+
+	// compute new acceleration: n*(n-1)*13 flops
+	// acceleration(n, x, m, a);
+	// acceleration_blocked(n, x, m, a);
+	// acceleration_blocked_buffered(n, x, m, a);
+	// acceleration_blocked_omp(n, x, m, a);
+  acceleration_blocked_vectorized(n, x, m, a);
+
+	// update velocity: 6n flops
+	for (int i = 0; i < 3 * n; i++)
+		v[i] += dt * a[i];
+}
+
+template <typename T>
+size_t alignment(const T *p)
+{
+	for (size_t m = 64; m > 1; m /= 2)
+		if (((size_t)p) % m == 0)
+			return m;
+	return 1;
+}
+
+// functions for AoS <-> SoA transformation
+void copy(double *to, double3 *from, size_t n)
+{
+#pragma omp for schedule(static, 1)
+	for (int I = 0; I < n; I += B)
+		for (int i = I; i < I + B; i++)
+			for (size_t j = 0; j < 3; ++j)
+				to[j * n + i] = from[i][j];
+}
+void copy(double3 *to, double *from, size_t n)
+{
+#pragma omp for schedule(static, 1)
+	for (int I = 0; I < n; I += B)
+		for (int i = I; i < I + B; i++)
+			for (size_t j = 0; j < 3; ++j)
+				to[i][j] = from[j * n + i];
+}
+
+int main(int argc, char **argv)
+{
+	int n;							// number of bodies in the system
+	double *m;					// array for maasses
+	double3 *x;					// array for positions
+	double3 *v;					// array for velocites
+	double3 *a;					// array for accelerations
+	int timesteps;			// final time step number
+	int k;							// time step number
+	int mod;						// files are written when k is a multiple of mod
+	char basename[256]; // common part of file name
+	char name[256];			// filename with number
+	FILE *file;					// C style file hande
+	double t;						// current time
+	double dt;					// time step
+
+	// command line for restarting
+	if (argc == 5)
+	{
+		sscanf(argv[1], "%s", &basename);
+		sscanf(argv[2], "%d", &k);
+		sscanf(argv[3], "%d", &timesteps);
+		sscanf(argv[4], "%d", &mod);
+	}
+	else if (argc == 6) // command line for starting with initial condition
+	{
+		sscanf(argv[1], "%s", &basename);
+		sscanf(argv[2], "%d", &n);
+		sscanf(argv[3], "%d", &timesteps);
+		sscanf(argv[4], "%lg", &dt);
+		sscanf(argv[5], "%d", &mod);
+	}
+	else // invalid command line, print usage
+	{
+		std::cout << "usage: " << std::endl;
+		std::cout << "nbody_vanilla <basename> <load step> <final step> <every>" << std::endl;
+		std::cout << "nbody_vanilla <basename> <nbodies> <timesteps> <timestep> <every>" << std::endl;
+		return 1;
+	}
+
+	// set up computation from file
+	if (argc == 5)
+	{
+		sprintf(name, "%s_%06d.vtk", basename, k);
+		file = fopen(name, "r");
+		if (file == NULL)
+		{
+			std::cout << "could not open file " << std::string(basename) << " aborting" << std::endl;
+			return 1;
+		}
+		n = get_vtk_numbodies(file);
+		rewind(file);
+		x = new (std::align_val_t(64)) double3[n];
+		v = new (std::align_val_t(64)) double3[n];
+		m = new (std::align_val_t(64)) double[n];
+		read_vtk_file_double(file, n, x, v, m, &t, &dt);
+		fclose(file);
+		k *= mod; // adjust step number
+		std::cout << "loaded " << n << "bodies from file " << std::string(basename) << std::endl;
+	}
+	// set up computation from initial condition
+	if (argc == 6)
+	{
+		x = new (std::align_val_t(64)) double3[n];
+		v = new (std::align_val_t(64)) double3[n];
+		m = new (std::align_val_t(64)) double[n];
+		//plummer(n, 17, x, v, m);
+		two_plummer(n, 17, x, v, m);
+		//  cube(n,17,1.0,100.0,0.1,x,v,m);
+		std::cout << "initialized " << n << " bodies" << std::endl;
+		k = 0;
+		t = 0.0;
+		printf("writing %s_%06d.vtk \n", basename, k);
+		sprintf(name, "%s_%06d.vtk", basename, k);
+		file = fopen(name, "w");
+		write_vtk_file_double(file, n, x, v, m, t, dt);
+		fclose(file);
+	}
+	if (n % B != 0)
+	{
+		std::cout << n << " is not a multiple of the block size " << B << std::endl;
+		exit(1);
+	}
+	if (B % 8 != 0)
+	{
+		std::cout << B << "=B is not a multiple of 4 " << std::endl;
+		exit(1);
+	}
+
+	// switch to SoA data layout in 1d array
+	double *X;
+	X = new (std::align_val_t(64)) double[3 * n];
+	double *V;
+	V = new (std::align_val_t(64)) double[3 * n];
+	double *A;
+	A = new (std::align_val_t(64)) double[3 * n];
+
+	// explicitly fill/clear padded values
+	for (int i = 0; i < n; i++)
+		for (int j = 3; j < M; j++)
+			x[i][j] = v[i][j] = 0.0;
+
+	// copy initial values
+	copy(X, x, n);
+	copy(V, v, n);
+	auto ekin0 = ekin(n, m, v);
+	auto epot0 = epot(n, m, x, G);
+	std::cout << "ekin=" << ekin0 << " epot=" << epot0 << " etot=" << ekin0 + epot0 << std::endl;
+
+	// std::cout << "size of mutex is " << sizeof(std::mutex) << std::endl;
+
+	// initialize timestep and write first file
+	std::cout << "step=" << k << " finalstep=" << timesteps << " time=" << t << " dt=" << dt << std::endl;
+	int P;
+#pragma omp parallel
+	{
+		P = omp_get_num_threads();
+	}
+	std::cout << "using " << P << " threads" << std::endl;
+	auto start = get_time_stamp();
+
+	// do time steps
+	k += 1;
+	for (; k <= timesteps; k++)
+	{
+		leapfrog(n, dt, X, V, m, A);
+		t += dt;
+		if (k % mod == 0)
+		{
+			auto stop = get_time_stamp();
+			double elapsed = get_duration_seconds(start, stop);
+			double flop = mod * (13.0 * n * (n - 1.0) + 12.0 * n);
+			printf("%g seconds for %g ops = %g GFLOPS \n", elapsed, flop, flop / elapsed / 1E9);
+
+			printf("writing %s_%06d.vtk \n", basename, k / mod);
+			sprintf(name, "%s_%06d.vtk", basename, k / mod);
+			file = fopen(name, "w");
+			copy(x, X, n);
+			copy(v, V, n);
+			write_vtk_file_double(file, n, x, v, m, t, dt);
+			fclose(file);
+
+			auto ekin1 = ekin(n, m, v);
+			auto epot1 = epot(n, m, x, G);
+			std::cout << "ekin=" << ekin1 << " epot=" << epot1 << " etot=" << ekin1 + epot1 
+			<< " ratio=" << (ekin1+epot1)/(ekin0+epot0) << std::endl;
+
+			start = get_time_stamp();
+		}
+	}
+
+	delete[] a;
+	delete[] x;
+	delete[] v;
+	delete[] m;
+	delete[] A;
+	delete[] X;
+	delete[] V;
+
+	return 0;
+}
