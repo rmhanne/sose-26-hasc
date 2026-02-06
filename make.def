@@ -2,7 +2,25 @@
 # I want to keep it as simple as possible and not fiddle around with build system issues
 
 ######################
-# first we set all the different compilers
+# define your architecture, currently supports: generic, arm, intel
+######################
+
+ARCHITECTURE = arm
+
+######################
+# define availability of programming models by commenting in/out the following lines
+######################
+
+HAVE_MPI = 1
+
+HAVE_OPENMP = 1
+
+HAVE_TBB = 1
+
+#HAVE_SYCL = 1
+
+######################
+# set all the different compilers
 ######################
 
 # C++ compiler for sequential programs
@@ -21,7 +39,7 @@ CCTBB = g++
 DPCPP = icpx -fsycl
 
 ######################
-# now set compilation options for various configurations
+# set compilation options for various configurations
 ######################
 
 # options to be used with all compilers
@@ -34,7 +52,6 @@ OMPFLAGS = -fopenmp
 MPIFLAGS = 
 
 # additional flags to enforce no autovectorization
-#SCALARFLAGS = 
 SCALARFLAGS = -fno-tree-vectorize
 
 # additional flags for ARM neon compilation
@@ -51,6 +68,10 @@ AVX512FLAGS = -ftree-vectorize -mavx512f -mfma -fopt-info-vec
 
 # flags for vectorization with std::simd; need to adapt this to your hardware
 SIMDFLAGS = $(ARMFLAGS)
+
+# flags for TBB targets
+TBBFLAGS = -I/opt/local/libexec/onetbb/include
+#TBBFLAGS = -I/opt/intel/oneapi/2025.3/include
 
 # additional flags for Intel oneAPI Sycl compilation 
 DPCPPFLAGS = -I/opt/intel/oneapi/2025.3/include
@@ -70,7 +91,8 @@ LFLAGSOMP = -lpthread
 LFLAGSMPI = -lpthread
 
 # additional options for TBB programs
-LFLAGSTBB = -L/opt/intel/oneapi/2025.3/lib -ltbb
+LFLAGSTBB = -L/opt/local/libexec/onetbb/lib/ -ltbb
+#LFLAGSTBB = -L/opt/intel/oneapi/2025.3/lib/ -ltbb
 
 # additional options for oneAPI Sycl programs
 LFLAGSDPCPP =

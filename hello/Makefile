@@ -1,7 +1,24 @@
 # include definitions from root directory
 include ../make.def
 
-all: hello_openmp hello_mpi hello_sendrecv hello_tbb hello_sycl
+# define targets
+GENERIC_TARGETS = hello_openmp hello_sendrecv 
+MPI_TARGETS = hello_mpi 
+TBB_TARGETS = hello_tbb
+SYCL_TARGETS = hello_sycl
+
+TARGETS = $(GENERIC_TARGETS)
+ifdef HAVE_MPI
+	TARGETS += $(MPI_TARGETS)
+endif
+ifdef HAVE_TBB
+	TARGETS += $(TBB_TARGETS)
+endif
+ifdef HAVE_SYCL
+	TARGETS += $(SYCL_TARGETS)
+endif
+
+all: $(TARGETS)
 
 hello_openmp: hello_openmp.cc Makefile ../make.def
 	$(CCOMP) $(CCFLAGSBASE) $(OMPFLAGS) -o $@ $< $(LFLAGS) $(LFLAGSOMP)
@@ -13,15 +30,13 @@ hello_sendrecv: hello_sendrecv.cc Makefile ../cppthreads/MessageSystem.hh ../mak
 	$(CC) $(CCFLAGSBASE) -I../cppthreads/ -o $@ $< $(LFLAGS)
 
 hello_tbb: hello_tbb.cc Makefile ../make.def
-	$(CCTBB) $(CCFLAGSBASE) -o $@ $< $(LFLAGS) $(LFLAGSTBB)
+	$(CCTBB) $(CCFLAGSBASE) $(TBBFLAGS) -o $@ $< $(LFLAGS) $(LFLAGSTBB)
 
 hello_sycl: hello_sycl.cc Makefile ../make.def
 	$(DPCPP) $(CCFLAGSBASE) $(CCFLAGSDPCPP) -o $@ $< $(LFLAGS) $(LFLAGSDPCPP)
 
+debug:
+	@echo $(ARCHITECTURE) $(TARGETS)
+
 clean:
-	rm -f *.o \
-	hello_openmp \
-	hello_mpi \
-	hello_tbb \
-	hello_sycl \
-	hello_sendrecv
+	rm -f *.o $(TARGETS)
