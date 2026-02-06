@@ -5,7 +5,7 @@
 # define your architecture, currently supports: generic, arm, intel
 ######################
 
-ARCHITECTURE = intel
+ARCHITECTURE = arm
 
 ######################
 # define availability of programming models by commenting in/out the following lines
@@ -17,23 +17,23 @@ HAVE_OPENMP = 1
 
 HAVE_TBB = 1
 
-HAVE_SYCL = 1
+#HAVE_SYCL = 1
 
 ######################
 # set all the different compilers
 ######################
 
 # C++ compiler for sequential programs
-CC = g++-14
+CC = g++
 
 # C++ compiler for openMP programs
-CCOMP = g++-14
+CCOMP = $(CC)
 
 # C++ compiler for MPI programs
 CCMPI = mpicxx 
 
 # C++ compiler to be used for Intel oneAPI TBB programs
-CCTBB = g++-14
+CCTBB = $(CC)
 
 # C++ compiler to be used for Intel oneAPI Sycl programs
 DPCPP = icpx -fsycl
@@ -75,8 +75,8 @@ SIMDFLAGS = -std=c++26 $(AVX512FLAGS)
 endif
 
 # flags for TBB targets
-#TBBFLAGS = -I/opt/local/libexec/onetbb/include
-TBBFLAGS = -I/opt/intel/oneapi/2025.3/include
+TBBFLAGS = -I/opt/local/libexec/onetbb/include
+#TBBFLAGS = -I/opt/intel/oneapi/2025.3/include
 
 # additional flags for Intel oneAPI Sycl compilation 
 DPCPPFLAGS = -I/opt/intel/oneapi/2025.3/include
@@ -96,8 +96,8 @@ LFLAGSOMP = -lpthread
 LFLAGSMPI = -lpthread
 
 # additional options for TBB programs
-#LFLAGSTBB = -L/opt/local/libexec/onetbb/lib/ -ltbb
-LFLAGSTBB = -L/opt/intel/oneapi/2025.3/lib/ -ltbb
+LFLAGSTBB = -L/opt/local/libexec/onetbb/lib/ -ltbb
+#LFLAGSTBB = -L/opt/intel/oneapi/2025.3/lib/ -ltbb
 
 # additional options for oneAPI Sycl programs
 LFLAGSDPCPP =
