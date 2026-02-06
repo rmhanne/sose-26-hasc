@@ -67,7 +67,12 @@ AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
 AVX512FLAGS = -ftree-vectorize -mavx512f -mfma -fopt-info-vec
 
 # flags for vectorization with std::simd; need to adapt this to your hardware
+ifeq ($(ARCHITECTURE),arm)
 SIMDFLAGS = $(ARMFLAGS)
+endif
+ifeq ($(ARCHITECTURE),intel)
+SIMDFLAGS = $(AVX2FLAGS)
+endif
 
 # flags for TBB targets
 TBBFLAGS = -I/opt/local/libexec/onetbb/include

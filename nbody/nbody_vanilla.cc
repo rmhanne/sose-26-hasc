@@ -13,11 +13,10 @@
 #endif
 
 // basic data type for position, velocity, acceleration
-typedef double double3[4]; // pad up for later use with SIMD
+using double3 = double[4]; // pad up for later use with SIMD
 const int B = 32;					 // block size for tiling
 
-/*const double gamma = 6.674E-11;*/
-const double G = 1.0;
+const double G = 1.0; // do not change this value; the initial condition only works with this value!
 const double epsilon2 = 1E-10;
 
 /** \brief compute acceleration vector from position and masses
@@ -118,7 +117,7 @@ void leapfrog(int n, double dt, double3 *__restrict__ x, double3 *__restrict__ v
     a[i][0] = a[i][1] = a[i][2] = 0.0;
 
   // compute new acceleration: n*(n-1)*13 flops
-  acceleration(n, x, m, a);
+  acceleration_blocked(n, x, m, a);
 
   // update velocity: 6n flops
   for (int i = 0; i < n; i++)
@@ -166,6 +165,8 @@ int main(int argc, char **argv)
     std::cout << "usage: " << std::endl;
     std::cout << "nbody_vanilla <basename> <load step> <final step> <every>" << std::endl;
     std::cout << "nbody_vanilla <basename> <nbodies> <timesteps> <timestep> <every>" << std::endl;
+    std::cout << "nbodies must be a multiple of " << B << std::endl;
+    std::cout << "timesteps around 0.01 ... 0.1 are reasonable" << std::endl;
     return 1;
   }
 
@@ -199,9 +200,6 @@ int main(int argc, char **argv)
     v = new (std::align_val_t{64}) double3[n];
     m = new (std::align_val_t{64}) double[n];
 
-    // x = static_cast<double3*>(calloc(n,sizeof(double3)));
-    // v = static_cast<double3*>(calloc(n,sizeof(double3)));
-    // m = static_cast<double*>(calloc(n,sizeof(double)));
     // plummer(n,17,x,v,m);
     two_plummer(n, 17, x, v, m);
     // cube(n,17,1.0,100.0,0.1,x,v,m);
@@ -217,7 +215,6 @@ int main(int argc, char **argv)
 
   // allocate acceleration vector
   a = new (std::align_val_t{64}) double3[n];
-  // a = static_cast<double3*>(calloc(n,sizeof(double3)));
 
   // initialize timestep and write first file
   std::cout << "step=" << k << " finalstep=" << timesteps << " time=" << t << " dt=" << dt << std::endl;

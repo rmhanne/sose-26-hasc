@@ -1,10 +1,13 @@
 #ifndef GENERATE_VANILLA_H
 #define GENERATE_VANILLA_H
 
-// put particles in a box of size
-// masses vary randomly by mdelta around m0
-// velocity is zero
-// center of mass adjusted to zero
+/*
+ * put particles in a box of size
+ * masses vary randomly by mdelta around m0
+ * velocity is zero
+ * center of mass adjusted to zero
+ * implementation is based on AoS data storage where doubleX is an arry type with at least 3 double entries
+*/
 template <typename doubleX>
 void cube(int n, long int seed, double size, double m0, double mdelta,
           doubleX x[], doubleX v[], double m[])
@@ -49,6 +52,10 @@ void cube(int n, long int seed, double size, double m0, double mdelta,
 /* This is a copy from
  *  Pit Hut, Jun Makino: The Art of Computational Science,
  *  The Kali Code, vol. 5. Initial Conditions: Plummer's Model.
+ *  http://www.artcompsci.org/kali/vol/plummer/title.html (link tested Feb 6, 2026)
+ *  Note that here the gravitational constant is assumed to be 1!
+ *  center of mass adjusted to zero
+ *  implementation is based on AoS data storage where doubleX is an arry type with at least 3 double entries
  */
 template <typename doubleX>
 double plummer(int n, long int seed,
@@ -121,8 +128,15 @@ double plummer(int n, long int seed,
   return maxr;
 }
 
-// put two plummer type clusters t some distance
-// and with slight tngential velocity component
+/* This places two star clusters next to each other.
+ *  Code is based on 
+ *  Pit Hut, Jun Makino: The Art of Computational Science,
+ *  The Kali Code, vol. 5. Initial Conditions: Plummer's Model.
+ *  http://www.artcompsci.org/kali/vol/plummer/title.html (link tested Feb 6, 2026)
+ *  Note that here the gravitational constant is assumed to be 1!
+ *  center of mass adjusted to zero
+ *  implementation is based on AoS data storage where doubleX is an arry type with at least 3 double entries
+ */
 template <typename doubleX>
 void two_plummer(int n, long int seed,
                  doubleX x[], doubleX v[], double m[], const int verbosity = 1)
