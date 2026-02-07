@@ -66,12 +66,21 @@ AVX2FLAGS = -ftree-vectorize -mavx2 -mfma -fopt-info-vec
 # additional flags for AVX512 compilation
 AVX512FLAGS = -ftree-vectorize -mavx512f -mfma -fopt-info-vec
 
-# flags for vectorization with std::simd; need to adapt this to your hardware
+# flags for vectorization; need to adapt this to your hardware
+# these flags are for programs relying only on vectorization with compiler options
 ifeq ($(ARCHITECTURE),arm)
-SIMDFLAGS = -std=c++26 $(ARMFLAGS)
+VECTORIZATIONFLAGS = $(ARMFLAGS)
 endif
 ifeq ($(ARCHITECTURE),intel)
-SIMDFLAGS = -std=c++26 $(AVX512FLAGS)
+VECTORIZATIONFLAGS = $(AVX512FLAGS)
+endif
+
+# flags for vectorization with std::simd; need to adapt this to your hardware
+ifeq ($(ARCHITECTURE),arm)
+STDSIMDFLAGS = -std=c++26 $(ARMFLAGS)
+endif
+ifeq ($(ARCHITECTURE),intel)
+STDSIMDFLAGS = -std=c++26 $(AVX512FLAGS)
 endif
 
 # flags for TBB targets

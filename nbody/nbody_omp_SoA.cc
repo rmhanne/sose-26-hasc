@@ -14,9 +14,6 @@
 #include <omp.h> // headers for runtime if available
 #endif
 
-// for ARM intrinsics
-#include <arm_neon.h>
-
 #ifndef __GNUC__
 #define __restrict__
 #endif
@@ -35,21 +32,159 @@ const int B = 128;				 // block size for tiling
 const double G = 1.0;
 const double epsilon2 = 1E-10;
 
-/** \brief compute acceleration vector from position and masses (vectorized using 2x2 masses)
+/** \brief compute acceleration vector from position and masses
+ *
+ * Sequential blocked version
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration_blocked_SoA(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ a)
+{
+	for (int I = 0; I < n; I += B)
+	{
+		// diagonal block
+		for (int i = I; i < I + B; i++)
+			for (int j = i + 1; j < I + B; j++)
+			{
+				double d0 = x[j] - x[i];
+				double d1 = x[n + j] - x[n + i];
+				double d2 = x[2 * n + j] - x[2 * n + i];
+				double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+				double r = sqrt(r2);
+				double invfact = G / (r * r2);
+				double factori = m[i] * invfact;
+				double factorj = m[j] * invfact;
+				a[i] += factorj * d0;
+				a[n + i] += factorj * d1;
+				a[2 * n + i] += factorj * d2;
+				a[j] -= factori * d0;
+				a[n + j] -= factori * d1;
+				a[2 * n + j] -= factori * d2;
+			}
+		// upper diagonal full blocks
+		for (int J = I + B; J < n; J += B)
+			for (int j = J; j < J + B; j++)
+				for (int i = I; i < I + B; i++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					a[i] += factorj * d0;
+					a[n + i] += factorj * d1;
+					a[2 * n + i] += factorj * d2;
+					a[j] -= factori * d0;
+					a[n + j] -= factori * d1;
+					a[2 * n + j] -= factori * d2;
+				}
+	}
+}
+
+/** \brief compute acceleration vector from position and masses (blocked sequential version)
  *
  * This version works on structure of arrays data layout
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
  */
-void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
+void acceleration_blocked_buffered_SoA(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
 {
+	// make private acceleration vectors to accumulate to
+	double *aI;
+	aI = new (std::align_val_t(64)) double[3 * B];
+	double *aJ;
+	aJ = new (std::align_val_t(64)) double[3 * B];
+
+	// parallel loop over block rows with *cyclic* partitioning and dynamic scheduling
+	for (int I = 0; I < n; I += B)
+	{
+		// clear accelerations for whole block row
+		for (int i = 0; i < 3 * B; ++i)
+			aI[i] = 0.0;
+
+		// diagonal block
+		for (int i = I; i < I + B; i++)
+			for (int j = i + 1; j < I + B; j++)
+			{
+				double d0 = x[j] - x[i];
+				double d1 = x[n + j] - x[n + i];
+				double d2 = x[2 * n + j] - x[2 * n + i];
+				double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+				double r = sqrt(r2);
+				double invfact = G / (r * r2);
+				double factori = m[i] * invfact;
+				double factorj = m[j] * invfact;
+				aI[i - I] += factorj * d0; // updates private vector
+				aI[i - I + B] += factorj * d1;
+				aI[i - I + 2 * B] += factorj * d2;
+				aI[j - I] -= factori * d0;
+				aI[j - I + B] -= factori * d1;
+				aI[j - I + 2 * B] -= factori * d2;
+			}
+
+		// blocks in upper triangle
+		for (int J = I + B; J < n; J += B)
+		{
+			// clear accelerations for whole block column
+			for (int j = 0; j < 3 * B; ++j)
+				aJ[j] = 0.0;
+
+			for (int i = I; i < I + B; i++)
+				for (int j = J; j < J + B; j++)
+				{
+					double d0 = x[j] - x[i];
+					double d1 = x[n + j] - x[n + i];
+					double d2 = x[2 * n + j] - x[2 * n + i];
+					double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+					double r = sqrt(r2);
+					double invfact = G / (r * r2);
+					double factori = m[i] * invfact;
+					double factorj = m[j] * invfact;
+					aI[i - I] += factorj * d0; // updates private vector
+					aI[i - I + B] += factorj * d1;
+					aI[i - I + 2 * B] += factorj * d2;
+					aJ[j - J] -= factori * d0;
+					aJ[j - J + B] -= factori * d1;
+					aJ[j - J + 2 * B] -= factori * d2;
+				}
+
+			// update accelerations for block J
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j] += aJ[j];
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j + n] += aJ[j + B];
+			for (int j = 0; j < B; ++j)
+				aglobal[J + j + 2 * n] += aJ[j + 2 * B];
+		} // end J loop
+
+		// update accelerations of block I
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i] += aI[i];
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i + n] += aI[i + B];
+		for (int i = 0; i < B; ++i)
+			aglobal[I + i + 2 * n] += aI[i + 2 * B];
+	} // end I loop
+	// delete thread local data
+	delete[] aI;
+	delete[] aJ;
+}
+
+/** \brief compute acceleration vector from position and masses (blocked OMP parallel version)
+ *
+ * This version works on structure of arrays data layout
+ * Executes \sum_{i=0}^{n-1} (n-i-1)*26 = n(n-1)*13
+ * flops including 1 division and one square root
+ */
+void acceleration_blocked_omp_SoA(int n, double *__restrict__ x, double *__restrict__ m, double *__restrict__ aglobal)
+{
+	std::vector<std::mutex> mutexes(n / B); // one mutex per block
+
 #pragma omp parallel firstprivate(n, x, m, aglobal)
 	{
-		float64x2_t XJ0, XJ1, XJ2;
-		float64x2_t XI0, XI1, XI2;
-		float64x2_t D0, D1, D2;
-		float64x2_t R0, R1;
-		float64x2_t A0, A1, A2;
-		float64x2_t S, M;
-
 		// make private acceleration vectors to accumulate to
 		// these are then added to aglobal in critical sections
 		double *aI;
@@ -57,7 +192,7 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 		double *aJ;
 		aJ = new (std::align_val_t(64)) double[3 * B];
 
-		// parallel loop over block rows with cyclic partitioning
+		// parallel loop over block rows with *cyclic* partitioning and dynamic scheduling
 #pragma omp for schedule(dynamic, 1)
 		for (int I = 0; I < n; I += B)
 		{
@@ -65,7 +200,7 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 			for (int i = 0; i < 3 * B; ++i)
 				aI[i] = 0.0;
 
-			// diagonal block (I,I) is handled in the standard way exploiting symmetry
+			// diagonal block
 			for (int i = I; i < I + B; i++)
 				for (int j = i + 1; j < I + B; j++)
 				{
@@ -77,7 +212,7 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 					double invfact = G / (r * r2);
 					double factori = m[i] * invfact;
 					double factorj = m[j] * invfact;
-					aI[i - I] += factorj * d0;
+					aI[i - I] += factorj * d0; // updates private vector
 					aI[i - I + B] += factorj * d1;
 					aI[i - I + 2 * B] += factorj * d2;
 					aI[j - I] -= factori * d0;
@@ -85,162 +220,35 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 					aI[j - I + 2 * B] -= factori * d2;
 				}
 
-			// blocks J>I can also exploit symmetry
+			// blocks in upper triangle
 			for (int J = I + B; J < n; J += B)
 			{
 				// clear accelerations for whole block column
 				for (int j = 0; j < 3 * B; ++j)
 					aJ[j] = 0.0;
 
-				// compute interactions of blocks I and J
-				for (int i = I; i < I + B; i += 2)
-					for (int j = J; j < J + B; j += 2)
+				for (int i = I; i < I + B; i++)
+					for (int j = J; j < J + B; j++)
 					{
-						// compute interaction of 2x2 masses i,i+1 and j,j+1
-
-						// load positions of two particles starting at j
-						XJ0 = vld1q_f64(&(x[j]));					// x coordinates
-						XJ1 = vld1q_f64(&(x[j + n]));			// y coordinates
-						XJ2 = vld1q_f64(&(x[j + 2 * n])); // z coordinates
-
-						// difference to mass i
-						XI0 = vmovq_n_f64(x[i]);				 // load broadcast for x-coordinate
-						XI1 = vmovq_n_f64(x[i + n]);		 // load broadcast for y-coordinate
-						XI2 = vmovq_n_f64(x[i + 2 * n]); // load broadcast for z-coordinate
-						D0 = vsubq_f64(XJ0, XI0);				 // distance j,j+1-i, x-coordinate
-						D1 = vsubq_f64(XJ1, XI1);				 // distance j,j+1-i, y-coordinate
-						D2 = vsubq_f64(XJ2, XI2);				 // distance j,j+1-i, z-coordinate
-						A0 = vmovq_n_f64(epsilon2);			 // now compute squared distances
-						A0 = vfmaq_f64(A0, D0, D0);			 // fma
-						A0 = vfmaq_f64(A0, D1, D1);			 // fma
-						A0 = vfmaq_f64(A0, D2, D2);			 // fma
-						// now A0 = ( ||x_j-x_i||^2 ; ||x_{j+1}-x_i||^2)
-						R0 = vsqrtq_f64(A0); // compute square roots; the advantage is, we do not need the result immediately
-
-						// difference to mass i+1
-						XI0 = vmovq_n_f64(x[i + 1]);				 // load broadcast for x-coordinate
-						XI1 = vmovq_n_f64(x[i + 1 + n]);		 // load broadcast for y-coordinate
-						XI2 = vmovq_n_f64(x[i + 1 + 2 * n]); // load broadcast for z-coordinate
-						D0 = vsubq_f64(XJ0, XI0);						 // distance j,j+1-i+1, x-coordinate
-						D1 = vsubq_f64(XJ1, XI1);						 // distance j,j+1-i+1, y-coordinate
-						D2 = vsubq_f64(XJ2, XI2);						 // distance j,j+1-i+1, z-coordinate
-						A1 = vmovq_n_f64(epsilon2);					 // now compute squared distances
-						A1 = vfmaq_f64(A1, D0, D0);					 // fma
-						A1 = vfmaq_f64(A1, D1, D1);					 // fma
-						A1 = vfmaq_f64(A1, D2, D2);					 // fma
-						// now A1 = ( ||x_j-x_{i+1}||^2 ; ||x_{j+1}-x_{i+1}||^2)
-						R1 = vsqrtq_f64(A1); // compute square roots; the advantage is, we do not need the result immediately
-
-						// now we proceed to compute the scalar factors s_{i,j} = G/r_{i,j}^3
-						A0 = vmulq_f64(A0, R0); // now A0 is distance^3
-						A1 = vmulq_f64(A1, R1); // now A1 is distance^3
-						D0 = vmovq_n_f64(G);		// load broadcast for G
-						R0 = vdivq_f64(D0, A0);
-						R1 = vdivq_f64(D0, A1);
-						// Now R0, R1 contain the scalar factors in the following form
-						// R0 = (s_{j,i} ; s_{j+1,i})
-						// R1 = (s_{j,i+1} ; s_{j+1,i+1})
-
-						// now we update the accelerations of the four masses
-
-						// FIRST contribution to acceleration of masses j,j+1 *from* masses i and i+1
-						// load acceleration of masses j,j+1
-						A0 = vld1q_f64(&(aJ[j - J]));					// x coordinates
-						A1 = vld1q_f64(&(aJ[j - J + B]));			// y coordinates
-						A2 = vld1q_f64(&(aJ[j - J + 2 * B])); // z coordinates
-
-						// contribution from mass i
-						// XJ* still contains the positions of j,j+1. But we need to recompute the differences
-						XI0 = vmovq_n_f64(x[i]);				 // load broadcast for x-coordinate
-						XI1 = vmovq_n_f64(x[i + n]);		 // load broadcast for y-coordinate
-						XI2 = vmovq_n_f64(x[i + 2 * n]); // load broadcast for z-coordinate
-						// build difference vectors
-						D0 = vsubq_f64(XI0, XJ0); // distance i-j,j+1, x-coordinate
-						D1 = vsubq_f64(XI1, XJ1); // distance i-j,j+1, y-coordinate
-						D2 = vsubq_f64(XI2, XJ2); // distance i-j,j+1, z-coordinate
-						// build scalar factors
-						S = vmovq_n_f64(m[i]);
-						S = vmulq_f64(S, R0);
-						// update
-						A0 = vfmaq_f64(A0, S, D0); // fma
-						A1 = vfmaq_f64(A1, S, D1); // fma
-						A2 = vfmaq_f64(A2, S, D2); // fma
-
-						// contribution from mass i+1
-						// XJ* still contains the positions of j,j+1. But we need to recompute the differences
-						XI0 = vmovq_n_f64(x[i + 1]);				 // load broadcast for x-coordinate
-						XI1 = vmovq_n_f64(x[i + 1 + n]);		 // load broadcast for y-coordinate
-						XI2 = vmovq_n_f64(x[i + 1 + 2 * n]); // load broadcast for z-coordinate
-						// build difference vectors
-						D0 = vsubq_f64(XI0, XJ0); // distance i+1-j,j+1, x-coordinate
-						D1 = vsubq_f64(XI1, XJ1); // distance i+1-j,j+1, y-coordinate
-						D2 = vsubq_f64(XI2, XJ2); // distance i+1-j,j+1, z-coordinate
-						// build scalar factors
-						S = vmovq_n_f64(m[i + 1]);
-						S = vmulq_f64(S, R1);
-						// update
-						A0 = vfmaq_f64(A0, S, D0); // fma
-						A1 = vfmaq_f64(A1, S, D1); // fma
-						A2 = vfmaq_f64(A2, S, D2); // fma
-
-						// store acceleration of masses j,j+1
-						vst1q_f64(&(aJ[j - J]), A0);
-						vst1q_f64(&(aJ[j - J + B]), A1);
-						vst1q_f64(&(aJ[j - J + 2 * B]), A2);
-
-						// SECOND contribution to acceleration of masses i,i+1 *from* masses j and j+1
-						// load coordinates of i,i+1 in SIMD register
-						XI0 = vld1q_f64(&(x[i]));					// x coordinates
-						XI1 = vld1q_f64(&(x[i + n]));			// y coordinates
-						XI2 = vld1q_f64(&(x[i + 2 * n])); // z coordinates
-
-						// contribution from mass j
-						XJ0 = vmovq_n_f64(x[j]);				 // load broadcast for x-coordinate
-						XJ1 = vmovq_n_f64(x[j + n]);		 // load broadcast for y-coordinate
-						XJ2 = vmovq_n_f64(x[j + 2 * n]); // load broadcast for z-coordinate
-						// build difference vectors
-						D0 = vsubq_f64(XJ0, XI0); // distance i+1-j,j+1, x-coordinate
-						D1 = vsubq_f64(XJ1, XI1); // distance i+1-j,j+1, y-coordinate
-						D2 = vsubq_f64(XJ2, XI2); // distance i+1-j,j+1, z-coordinate
-						// build scalar factors
-						M = vmovq_n_f64(m[j]);
-						S = R0;
-						S = vcopyq_laneq_f64(S, 1, R1, 0);
-						S = vmulq_f64(S, M);
-						// load acceleration of masses i,i+1
-						A0 = vld1q_f64(&(aI[i - I]));					// x coordinates
-						A1 = vld1q_f64(&(aI[i - I + B]));			// y coordinates
-						A2 = vld1q_f64(&(aI[i - I + 2 * B])); // z coordinates
-						// update
-						A0 = vfmaq_f64(A0, S, D0); // fma
-						A1 = vfmaq_f64(A1, S, D1); // fma
-						A2 = vfmaq_f64(A2, S, D2); // fma
-
-						// contribution from mass j+1
-						XJ0 = vmovq_n_f64(x[j + 1]);				 // load broadcast for x-coordinate
-						XJ1 = vmovq_n_f64(x[j + 1 + n]);		 // load broadcast for y-coordinate
-						XJ2 = vmovq_n_f64(x[j + 1 + 2 * n]); // load broadcast for z-coordinate
-						// build difference vectors
-						D0 = vsubq_f64(XJ0, XI0); // distance i+1-j,j+1, x-coordinate
-						D1 = vsubq_f64(XJ1, XI1); // distance i+1-j,j+1, y-coordinate
-						D2 = vsubq_f64(XJ2, XI2); // distance i+1-j,j+1, z-coordinate
-						// build scalar factors
-						M = vmovq_n_f64(m[j + 1]);
-						S = R1;
-						S = vcopyq_laneq_f64(S, 0, R0, 1);
-						S = vmulq_f64(S, M);
-						// update
-						A0 = vfmaq_f64(A0, S, D0); // fma
-						A1 = vfmaq_f64(A1, S, D1); // fma
-						A2 = vfmaq_f64(A2, S, D2); // fma
-
-						// store acceleration of masses i,i+1
-						vst1q_f64(&(aI[i - I]), A0);
-						vst1q_f64(&(aI[i - I + B]), A1);
-						vst1q_f64(&(aI[i - I + 2 * B]), A2);
+						double d0 = x[j] - x[i];
+						double d1 = x[n + j] - x[n + i];
+						double d2 = x[2 * n + j] - x[2 * n + i];
+						double r2 = d0 * d0 + d1 * d1 + d2 * d2 + epsilon2;
+						double r = sqrt(r2);
+						double invfact = G / (r * r2);
+						double factori = m[i] * invfact;
+						double factorj = m[j] * invfact;
+						aI[i - I] += factorj * d0; // updates private vector
+						aI[i - I + B] += factorj * d1;
+						aI[i - I + 2 * B] += factorj * d2;
+						aJ[j - J] -= factori * d0;
+						aJ[j - J + B] -= factori * d1;
+						aJ[j - J + 2 * B] -= factori * d2;
 					}
+
 				// update accelerations for block J
-#pragma omp critical
+				// #pragma omp critical
+				std::lock_guard<std::mutex> ul{mutexes[J / B]};
 				{
 					for (int j = 0; j < B; ++j)
 						aglobal[J + j] += aJ[j];
@@ -249,10 +257,11 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 					for (int j = 0; j < B; ++j)
 						aglobal[J + j + 2 * n] += aJ[j + 2 * B];
 				}
-			} // end loop over J
+			} // end J loop
 
 			// update accelerations of block I
-#pragma omp critical
+			// #pragma omp critical
+			std::lock_guard<std::mutex> ul{mutexes[I / B]};
 			{
 				for (int i = 0; i < B; ++i)
 					aglobal[I + i] += aI[i];
@@ -261,7 +270,8 @@ void acceleration_blocked_omp_vectorized_SoA(int n, double *__restrict__ x, doub
 				for (int i = 0; i < B; ++i)
 					aglobal[I + i + 2 * n] += aI[i + 2 * B];
 			}
-		} // end loop over I
+		} // end I loop
+		// delete thread local data
 		delete[] aI;
 		delete[] aJ;
 	}
@@ -282,7 +292,9 @@ void leapfrog(int n, double dt, double *__restrict__ x, double *__restrict__ v, 
 		a[i] = 0.0;
 
 	// compute new acceleration: n*(n-1)*13 flops
-	acceleration_blocked_omp_vectorized_SoA(n, x, m, a);
+	// acceleration_blocked_SoA(n, x, m, a);
+	// acceleration_blocked_buffered_SoA(n, x, m, a);
+	acceleration_blocked_omp_SoA(n, x, m, a);
 
 	// update velocity: 6n flops
 	for (int i = 0; i < 3 * n; i++)
