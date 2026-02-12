@@ -105,12 +105,12 @@ void matmul_simd(int n, const double A[], const double B[], double C[])
           {
             for (int r = 0; r < num_rows; ++r)
               for (int c = 0; c < num_cols; ++c)
-                CC[r][c].copy_from(&C[INDEX(s + r, t + c * simd_width, n)], stdx::element_aligned);
+                CC[r][c].copy_from(&C[INDEX(s + r, t + c * simd_width, n)], stdx::vector_aligned);
 
             for (int u = k; u < k + M; u += 1)
             {
               for (int c = 0; c < num_cols; ++c)
-                BB[c].copy_from(&B[INDEX(u, t + c * simd_width, n)], stdx::element_aligned);
+                BB[c].copy_from(&B[INDEX(u, t + c * simd_width, n)], stdx::vector_aligned);
 
               for (int r = 0; r < num_rows; ++r)
               {
@@ -122,7 +122,7 @@ void matmul_simd(int n, const double A[], const double B[], double C[])
 
             for (int r = 0; r < num_rows; ++r)
               for (int c = 0; c < num_cols; ++c)
-                CC[r][c].copy_to(&C[INDEX(s + r, t + c * simd_width, n)], stdx::element_aligned);
+                CC[r][c].copy_to(&C[INDEX(s + r, t + c * simd_width, n)], stdx::vector_aligned);
           }
 }
 

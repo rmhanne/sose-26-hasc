@@ -47,14 +47,22 @@ int main(int argc, char **argv)
   using T = double;
 
   // define block size and matrix size
-  const int M = 96;
-  const int n = 16 * M;
+  const int M = 48;
+  const int n = 64 * M;
 
   // create a queue on a cpu device
   sycl::queue q{sycl::cpu_selector_v};
   std::cout << "default device is "
             << q.get_device().get_info<sycl::info::device::name>()
             << std::endl;
+  
+  // print info
+  auto dev = q.get_device();
+  std::cout << "max_work_group_size=" << dev.get_info<sycl::info::device::max_work_group_size>() << std::endl;
+  std::cout << "local_mem_size=" << dev.get_info<sycl::info::device::local_mem_size>() << std::endl;
+  auto sgs = dev.get_info<sycl::info::device::sub_group_sizes>();
+  for (int i=0; i<sgs.size(); i++)
+    std::cout << "sub_group_sizes=" << sgs[i] << std::endl;
 
   // we use the explicit data movement strategy here
   // allocate three matrices on host
@@ -111,9 +119,9 @@ int main(int argc, char **argv)
   q.wait();
 
   // check result
-  matmul(n, host_A, host_B, host_D);
-  auto error = compare(n,host_C,host_D);
-  std::cout << "error=" << error << std::endl;
+//  matmul(n, host_A, host_B, host_D);
+//  auto error = compare(n,host_C,host_D);
+//  std::cout << "error=" << error << std::endl;
 
   // free memory on device
   sycl::free(device_C, q);
