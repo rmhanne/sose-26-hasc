@@ -338,7 +338,7 @@ int main(int argc, char **argv)
 	int timesteps;			// final time step number
 	int k;							// time step number
 	int mod;						// files are written when k is a multiple of mod
-	char basename[256]; // common part of file name
+	char basename[128]; // common part of file name
 	char name[256];			// filename with number
 	FILE *file;					// C style file hande
 	double t;						// current time
@@ -347,14 +347,14 @@ int main(int argc, char **argv)
 	// command line for restarting
 	if (argc == 5)
 	{
-		sscanf(argv[1], "%s", &basename);
+		sscanf(argv[1], "%s", (char *)&basename);
 		sscanf(argv[2], "%d", &k);
 		sscanf(argv[3], "%d", &timesteps);
 		sscanf(argv[4], "%d", &mod);
 	}
 	else if (argc == 6) // command line for starting with initial condition
 	{
-		sscanf(argv[1], "%s", &basename);
+		sscanf(argv[1], "%s", (char *)&basename);
 		sscanf(argv[2], "%d", &n);
 		sscanf(argv[3], "%d", &timesteps);
 		sscanf(argv[4], "%lg", &dt);
