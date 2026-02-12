@@ -5,6 +5,7 @@ include ../make.def
 GENERIC_TARGETS = nbody_vanilla
 OPENMP_TARGETS = nbody_omp_SoA
 ARM_TARGETS = nbody_armneon_SoA nbody_omp_armneon_SoA
+INTEL_TARGETS = nbody_omp_intel_SoA
 MPI_TARGETS =
 TBB_TARGETS =
 SYCL_TARGETS =
@@ -25,6 +26,9 @@ endif
 ifeq ($(ARCHITECTURE),arm)
 	TARGETS += $(ARM_TARGETS)
 endif
+ifeq ($(ARCHITECTURE),intel)
+	TARGETS += $(INTEL_TARGETS)
+endif
 
 # include path for all targets
 ROOTPATH = ../
@@ -42,6 +46,9 @@ nbody_armneon_SoA: nbody_armneon_SoA.cc Makefile ../make.def nbody_generate.hh n
 
 nbody_omp_armneon_SoA: nbody_omp_armneon_SoA.cc Makefile ../make.def nbody_generate.hh nbody_io.hh
 	$(CCOMP) -I$(ROOTPATH) -I$(ROOTPATH)benchmarking $(CCFLAGSBASE) $(OMPFLAGS) $(ARMFLAGS) -o $@ $< $(LFLAGS) $(LFLAGSOMP)
+
+nbody_omp_intel_SoA: nbody_omp_intel_SoA.cc Makefile ../make.def
+	$(CCOMP) -I$(ROOTPATH) -I$(ROOTPATH)benchmarking $(CCFLAGSBASE) $(OMPFLAGS) $(AVX512FLAGS) -o $@ $< $(LFLAGS) $(LFLAGSOMP)
 
 debug:
 	@echo $(ARCHITECTURE) $(TARGETS)
