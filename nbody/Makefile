@@ -3,7 +3,7 @@ include ../make.def
 
 # define targets
 GENERIC_TARGETS = nbody_vanilla
-OPENMP_TARGETS = nbody_omp_SoA
+OPENMP_TARGETS = nbody_omp_SoA nbody_omp_stdsimd_SoA
 ARM_TARGETS = nbody_armneon_SoA nbody_omp_armneon_SoA
 INTEL_TARGETS = nbody_omp_intel_SoA
 MPI_TARGETS =
@@ -49,6 +49,9 @@ nbody_omp_armneon_SoA: nbody_omp_armneon_SoA.cc Makefile ../make.def nbody_gener
 
 nbody_omp_intel_SoA: nbody_omp_intel_SoA.cc Makefile ../make.def
 	$(CCOMP) -I$(ROOTPATH) -I$(ROOTPATH)benchmarking $(CCFLAGSBASE) $(OMPFLAGS) $(AVX512FLAGS) -o $@ $< $(LFLAGS) $(LFLAGSOMP)
+
+nbody_omp_stdsimd_SoA: nbody_omp_stdsimd_SoA.cc Makefile ../make.def
+	$(CCOMP) -I$(ROOTPATH) -I$(ROOTPATH)benchmarking $(CCFLAGSBASE) $(OMPFLAGS) $(STDSIMDFLAGS) -o $@ $< $(LFLAGS) $(LFLAGSOMP)
 
 debug:
 	@echo $(ARCHITECTURE) $(TARGETS)
