@@ -71,7 +71,7 @@ public:
   // construct an experiment
   Experiment (int n_) : n(n_) {}
   // run an experiment; can be called several times
-  void run () const { sum=0; f2(n); }
+  void operator() () const { sum=0; f2(n); }
   // report number of operations
   double operations () const {return 2.0*n;}
 };
@@ -83,7 +83,7 @@ int main ()
   for (auto i : sizes) { 
     Experiment e(i);
     auto d = time_experiment(e);
-    double flops = d.first*e.operations()/d.second*1e6/1e9;
+    double flops = d.first*e.operations()/d.second/1e9;
     std::cout << "n=" << i << " took " << d.second << " us for " << d.first << " repetitions"
 	      << " " << flops << " Gflops/s"
 	      << " " << flops*sizeof(NUMBER) << " GByte/s" << std::endl;

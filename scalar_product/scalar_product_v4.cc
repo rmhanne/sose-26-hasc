@@ -55,7 +55,7 @@ public:
   // construct an experiment
   Experiment (int n_) : n(n_) {}
   // run an experiment; can be called several times
-  void run () const
+  void operator() () const
   {
     for (int rank=0; rank<P; ++rank) sums[rank] = 0;
     std::vector<std::thread> threads;
@@ -79,7 +79,7 @@ int main ()
     { 
       Experiment e(i);
       auto d = time_experiment(e);
-      double flops = d.first*e.operations()/d.second*1e6/1e9;
+      double flops = d.first*e.operations()/d.second/1e9;
       std::cout << "n=" << i << " took " << d.second << " us for " << d.first << " repetitions"
                 << " " << flops << " Gflops/s"
                 << " " << flops*8 << " GByte/s"

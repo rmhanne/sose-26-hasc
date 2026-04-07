@@ -50,7 +50,7 @@ void scalar_product_thread (const int rank, const int P, const int n)
   if (rank+1<P) send(rank+1,sum);
   
   // now all ranks have the result
-  if (rank==P-1)
+  if (rank==0)
     std::cout << rank << ": result=" << sum << std::endl;
 }
 
