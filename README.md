@@ -1,6 +1,11 @@
 # Beware!
 
-I am currently restructuring the code for the lecture in summer semester 2026! This read me is not up to date and the code is not ready yet.
+I am constantly restructuring the code for the lecture in summer semester 2026. The best is to update the code on a regular basis. In order to keep your changes use the following commands:
+```
+git stash
+git pull
+git stash pop
+```
 
 # hasc-code
 
