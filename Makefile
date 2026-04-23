@@ -5,6 +5,10 @@ all:
 	cd nbody && $(MAKE)
 	cd benchmarking && $(MAKE)
 	cd stream && $(MAKE)
+	cd exercises && $(MAKE)
+
+exercises:
+	cd exercises && $(MAKE)
 
 clean:
 	cd hello && $(MAKE) clean

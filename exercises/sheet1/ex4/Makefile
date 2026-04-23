@@ -1,8 +1,8 @@
 # include definitions from root directory
-include ../make.def
+include ../../../make.def
 
 # define targets
-GENERIC_TARGETS = pointer_chasing
+GENERIC_TARGETS = blas
 OPENMP_TARGETS =
 ARM_TARGETS =
 INTEL_TARGETS =
@@ -23,13 +23,13 @@ ifdef HAVE_SYCL
 endif
 
 # include path for all targets
-ROOTPATH = ../
+ROOTPATH = ../../
 
 # the default target
 all: $(TARGETS)
 
-pointer_chasing: pointer_chasing.cc Makefile ../make.def
-	$(CC) -I$(ROOTPATH) -O1 -o $@ $< $(LFLAGS)
+blas: blas.cc Makefile ../../../make.def
+	$(CC) -I$(ROOTPATH) $(CCFLAGSBASE) $(SIMDFLAGS) -o $@ $< $(LFLAGS)
 
 debug:
 	@echo $(ARCHITECTURE) $(TARGETS)
